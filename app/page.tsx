@@ -1,22 +1,60 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
+import { useState, useEffect } from "react";
 
 export default function Home() {
+  // State untuk menyimpan waktu saat ini
+  const [currentTime, setCurrentTime] = useState("");
+
+  useEffect(() => {
+    // Fungsi untuk mendapatkan waktu lokal
+    const updateTime = () => {
+      const now = new Date();
+      // Format jam: HH:MM:SS
+      const formattedTime = now.toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+      setCurrentTime(formattedTime);
+    };
+
+    // Panggil sekali agar jam langsung muncul tanpa delay 1 detik
+    updateTime();
+
+    // Update setiap 1 detik (1000 ms)
+    const timer = setInterval(updateTime, 1000);
+
+    // Bersihkan interval saat komponen di-unmount
+    return () => clearInterval(timer);
+  }, []);
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-800 antialiased selection:bg-blue-600 selection:text-white">
-
       {/* ================= Navbar ================= */}
       <nav className="sticky top-0 z-50 flex items-center justify-between border-b border-slate-100 bg-white/80 px-8 py-4 shadow-sm backdrop-blur-md md:px-16">
         <h1 className="text-xl font-extrabold tracking-tight text-slate-900 md:text-2xl">
           Company<span className="text-blue-600">Attendance</span>
         </h1>
 
-        <Link
-          href="/login"
-          className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:bg-blue-700 hover:shadow-blue-600/40 active:scale-95"
-        >
-          Login
-        </Link>
+        <div className="flex items-center gap-4 md:gap-6">
+          {/* Komponen Jam Real-time */}
+          <div className="flex items-center gap-2 rounded-lg bg-blue-50/50 px-3 py-1.5 text-sm font-bold tracking-widest text-blue-700 border border-blue-100">
+            <span>🕒</span>
+            <span suppressHydrationWarning>
+              {currentTime || "--:--:--"}
+            </span>
+          </div>
+
+          <Link
+            href="/login"
+            className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:bg-blue-700 hover:shadow-blue-600/40 active:scale-95"
+          >
+            Login
+          </Link>
+        </div>
       </nav>
 
       {/* ================= Hero ================= */}
@@ -27,7 +65,7 @@ export default function Home() {
               <span className="h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
               Solusi Absensi Pintar Berbasis Cloud
             </div>
-            
+
             <h2 className="mb-6 text-4xl font-extrabold tracking-tight text-slate-900 md:text-6xl">
               Sistem Absensi <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Modern</span>
             </h2>
@@ -80,12 +118,9 @@ export default function Home() {
           </div>
 
           <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-2 lg:grid-cols-4">
-
             <div className="group rounded-3xl border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:-translate-y-2 hover:border-blue-100 hover:shadow-2xl hover:shadow-blue-600/10">
               <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-3xl transition-transform duration-300 group-hover:scale-110">📷</div>
-              <h3 className="mb-2 text-xl font-bold text-slate-900">
-                Kamera
-              </h3>
+              <h3 className="mb-2 text-xl font-bold text-slate-900">Kamera</h3>
               <p className="text-sm leading-relaxed text-slate-600">
                 Verifikasi foto akurat saat melakukan absensi secara langsung.
               </p>
@@ -93,9 +128,7 @@ export default function Home() {
 
             <div className="group rounded-3xl border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:-translate-y-2 hover:border-blue-100 hover:shadow-2xl hover:shadow-blue-600/10">
               <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-3xl transition-transform duration-300 group-hover:scale-110">📍</div>
-              <h3 className="mb-2 text-xl font-bold text-slate-900">
-                GPS
-              </h3>
+              <h3 className="mb-2 text-xl font-bold text-slate-900">GPS</h3>
               <p className="text-sm leading-relaxed text-slate-600">
                 Mencatat koordinat lokasi pengguna secara otomatis dan real-time.
               </p>
@@ -103,9 +136,7 @@ export default function Home() {
 
             <div className="group rounded-3xl border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:-translate-y-2 hover:border-blue-100 hover:shadow-2xl hover:shadow-blue-600/10">
               <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-3xl transition-transform duration-300 group-hover:scale-110">✅</div>
-              <h3 className="mb-2 text-xl font-bold text-slate-900">
-                Approval
-              </h3>
+              <h3 className="mb-2 text-xl font-bold text-slate-900">Approval</h3>
               <p className="text-sm leading-relaxed text-slate-600">
                 Sistem persetujuan cuti dan absensi terintegrasi oleh atasan.
               </p>
@@ -113,14 +144,11 @@ export default function Home() {
 
             <div className="group rounded-3xl border border-slate-100 bg-white p-8 shadow-xl shadow-slate-200/50 transition-all duration-300 hover:-translate-y-2 hover:border-blue-100 hover:shadow-2xl hover:shadow-blue-600/10">
               <div className="mb-6 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-3xl transition-transform duration-300 group-hover:scale-110">📊</div>
-              <h3 className="mb-2 text-xl font-bold text-slate-900">
-                Riwayat
-              </h3>
+              <h3 className="mb-2 text-xl font-bold text-slate-900">Riwayat</h3>
               <p className="text-sm leading-relaxed text-slate-600">
                 Lihat dan unduh seluruh histori kehadiran dengan mudah.
               </p>
             </div>
-
           </div>
         </div>
       </section>
@@ -136,7 +164,6 @@ export default function Home() {
           </div>
 
           <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-4">
-
             <div className="relative rounded-2xl border border-slate-200/60 bg-white p-8 text-center shadow-md transition-all duration-300 hover:shadow-xl">
               <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-2xl font-bold text-blue-600 shadow-inner">1</div>
               <h3 className="font-bold text-slate-900">Login Akun</h3>
@@ -160,7 +187,6 @@ export default function Home() {
               <h3 className="font-bold text-slate-900">Absen Berhasil</h3>
               <p className="mt-2 text-xs text-slate-500">Kehadiran tercatat otomatis di database.</p>
             </div>
-
           </div>
         </div>
       </section>
@@ -176,7 +202,6 @@ export default function Home() {
           </p>
         </div>
       </footer>
-
     </main>
   );
 }
