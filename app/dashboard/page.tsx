@@ -15,18 +15,14 @@ export default function DashboardPage() {
   const [companyName, setCompanyName] = useState("Company Attendance");
   const [userId, setUserId] = useState("");
   
-  // ==========================================
   // STATE UNTUK ADMIN/OWNER
-  // ==========================================
   const [employeeCount, setEmployeeCount] = useState(0);
   const [presentCount, setPresentCount] = useState(0);
   const [lateCount, setLateCount] = useState(0);
   const [absentCount, setAbsentCount] = useState(0);
   const [recentAttendance, setRecentAttendance] = useState<any[]>([]);
 
-  // ==========================================
   // STATE UNTUK EMPLOYEE
-  // ==========================================
   const [todayAttendanceId, setTodayAttendanceId] = useState<string | null>(null);
   const [hasCheckedIn, setHasCheckedIn] = useState(false);
   const [hasCheckedOut, setHasCheckedOut] = useState(false);
@@ -65,14 +61,17 @@ export default function DashboardPage() {
         setCompanyName(companyData.name || "Company Attendance");
       }
 
-      // ----------------------------------------
-      // JIKA OWNER / ADMIN -> Muat Data Statistik
-      // ----------------------------------------
+      // JIKA OWNER / ADMIN
       if (profile.role === "owner" || profile.role === "admin") {
+        if (!profile.company_id) {
+            setLoading(false);
+            return;
+        }
+
         const { count: empCount } = await supabase.from("profiles").select("*", { count: "exact", head: true }).eq("company_id", profile.company_id);
         const today = new Date().toISOString().split('T')[0];
         
-        // MENGHINDARI ERROR AMBIGUOUS JOIN: Ambil data karyawan di perusahaan ini dulu
+        // Ambil data karyawan
         const { data: companyProfiles } = await supabase
           .from("profiles")
           .select("id, full_name")
@@ -84,7 +83,6 @@ export default function DashboardPage() {
         let mergedRecent: any[] = [];
 
         if (profileIds.length > 0) {
-          // Ambil rekap hari ini khusus untuk karyawan di perusahaan ini
           const { data: todayAtt } = await supabase
             .from("attendance")
             .select("status")
@@ -97,7 +95,6 @@ export default function DashboardPage() {
             if (att.status === 'absent') aCount++;
           });
 
-          // Ambil Recent Attendance khusus untuk karyawan di perusahaan ini
           const { data: attendanceData } = await supabase
             .from("attendance")
             .select(`id, profile_id, status, check_in, photo_check_in, created_at`)
@@ -105,7 +102,6 @@ export default function DashboardPage() {
             .order("created_at", { ascending: false })
             .limit(5);
 
-          // Gabungkan data nama agar tabel UI berfungsi
           mergedRecent = attendanceData?.map(att => ({
             ...att,
             profiles: {
@@ -120,9 +116,7 @@ export default function DashboardPage() {
         setAbsentCount(aCount);
         setRecentAttendance(mergedRecent);
       } 
-      // ----------------------------------------
-      // JIKA EMPLOYEE -> Muat Data Personal
-      // ----------------------------------------
+      // JIKA EMPLOYEE
       else {
         const today = new Date().toISOString().split('T')[0];
         const { data: myTodayAttendance } = await supabase
@@ -159,9 +153,6 @@ export default function DashboardPage() {
     router.push("/login");
   };
 
-  // ==========================================
-  // FUNGSI ABSENSI EMPLOYEE (TERKONEKSI KE DB)
-  // ==========================================
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -179,6 +170,9 @@ export default function DashboardPage() {
     }
   };
 
+  // ====================================================================
+  // FUNGSI ABSENSI YANG SUDAH BERSIH (TANPA KOLOM FIKTIF)
+  // ====================================================================
   const submitAttendance = async (type: "check_in" | "check_out") => {
     if (!photo || !employeeLocation) {
       alert("Foto dan Lokasi GPS wajib ada sebelum absen!");
@@ -187,26 +181,30 @@ export default function DashboardPage() {
     setIsTakingAttendance(true);
 
     try {
-      // 1. Upload Foto ke Supabase Storage
-      const fileExt = photo.name.split('.').pop();
+      // 1. Upload Foto ke Storage
+      const fileExt = photo.name ? photo.name.split('.').pop() : 'jpg';
       const fileName = `${userId}-${type}-${Date.now()}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
         .from('attendances')
         .upload(fileName, photo);
 
-      if (uploadError) throw new Error("Gagal mengupload foto. Pastikan bucket 'attendances' sudah dibuat dan diset Public.");
+      if (uploadError) {
+        console.error("Storage Error:", uploadError);
+        alert(`❌ Gagal Upload Foto: ${uploadError.message}`);
+        setIsTakingAttendance(false);
+        return;
+      }
 
-      // 2. Dapatkan URL Public dari foto
+      // 2. Dapatkan URL Public
       const { data: publicUrlData } = supabase.storage.from('attendances').getPublicUrl(fileName);
       const photoUrl = publicUrlData.publicUrl;
 
       const now = new Date().toISOString();
       const currentHour = new Date().getHours();
-      // Logika terlambat sederhana: Kalau absen masuk di atas jam 8 pagi, dianggap 'late'
       const attStatus = (type === "check_in" && currentHour >= 8) ? "late" : "present"; 
 
-      // 3. Simpan ke Database
+      // 3. Simpan ke Database HANYA dengan kolom yang BENAR-BENAR ADA di Supabase kamu
       if (type === "check_in") {
         const { data, error } = await supabase.from("attendance").insert({
           profile_id: userId,
@@ -214,41 +212,53 @@ export default function DashboardPage() {
           check_in: now,
           photo_check_in: photoUrl,
           approval_status: "pending"
-        }).select().single();
+        }).select().single(); 
 
-        if (error) throw error;
-        setTodayAttendanceId(data.id);
-        setHasCheckedIn(true);
+        if (error) {
+          console.error("Insert Error Object:", JSON.stringify(error, null, 2));
+          alert(`❌ Gagal Simpan DB (Check-in): ${error.message || "Silakan cek console log"}`);
+          setIsTakingAttendance(false);
+          return;
+        }
+
+        if (data) {
+          setTodayAttendanceId(data.id);
+          setHasCheckedIn(true);
+        }
       } else {
-        // Update record hari ini untuk Check-out
-        if (!todayAttendanceId) throw new Error("ID Absensi hari ini tidak ditemukan");
+        // Logika untuk CHECK-OUT
+        if (!todayAttendanceId) {
+          alert("❌ ID Absensi hari ini tidak ditemukan");
+          setIsTakingAttendance(false);
+          return;
+        }
         const { error } = await supabase.from("attendance").update({
           check_out: now,
           photo_check_out: photoUrl,
         }).eq("id", todayAttendanceId);
 
-        if (error) throw error;
+        if (error) {
+          console.error("Update Error Object:", JSON.stringify(error, null, 2));
+          alert(`❌ Gagal Simpan DB (Check-out): ${error.message || "Silakan cek console log"}`);
+          setIsTakingAttendance(false);
+          return;
+        }
         setHasCheckedOut(true);
       }
 
-      alert(`Berhasil ${type === "check_in" ? "Check-In" : "Check-Out"}!`);
+      alert(`✅ Berhasil ${type === "check_in" ? "Check-In" : "Check-Out"}!`);
       setPhoto(null);
       setPhotoPreview(null);
     } catch (error: any) {
-      console.error(error);
-      alert(error.message || "Gagal melakukan absensi.");
+      console.error("Catch Error:", error);
+      alert(`❌ Error Sistem: ${error.message || JSON.stringify(error)}`);
     }
+    
     setIsTakingAttendance(false);
   };
 
+  if (loading) return <div className="flex min-h-screen items-center justify-center font-semibold text-blue-600">Loading Dashboard...</div>;
 
-  if (loading) {
-    return <div className="flex min-h-screen items-center justify-center font-semibold text-blue-600">Loading Dashboard...</div>;
-  }
-
-  // ==========================================
-  // RENDER TAMPILAN EMPLOYEE
-  // ==========================================
   if (userRole === "employee") {
     return (
       <main className="min-h-screen bg-gray-50/50 pb-12">
@@ -311,10 +321,7 @@ export default function DashboardPage() {
     );
   }
 
-  // ==========================================
-  // RENDER TAMPILAN ADMIN / OWNER
-  // ==========================================
-  // Perhitungan presentase untuk grafik
+  // JIKA ADMIN / OWNER
   const totalAttended = presentCount + lateCount; 
   const attendanceRate = employeeCount > 0 ? Math.round((totalAttended / employeeCount) * 100) : 0;
   const lateRate = totalAttended > 0 ? Math.round((lateCount / totalAttended) * 100) : 0;
@@ -345,7 +352,6 @@ export default function DashboardPage() {
           <div className="rounded-3xl border bg-white p-6 shadow-sm"><h3 className="text-3xl font-extrabold text-red-500">{absentCount}</h3><p className="text-gray-500">Absent / Not In</p></div>
         </div>
 
-        {/* GRAFIK STATISTIK HARI INI */}
         <div className="mt-8 rounded-3xl border bg-white p-6 shadow-sm">
           <h3 className="text-lg font-bold">Grafik Kehadiran Hari Ini</h3>
           <p className="text-sm text-gray-500 mb-6">Persentase karyawan yang sudah absen vs yang belum.</p>
@@ -358,15 +364,9 @@ export default function DashboardPage() {
               {lateRate > 5 ? `${lateRate}%` : ''}
             </div>
           </div>
-          <div className="flex gap-4 mt-4 text-xs font-medium text-gray-500">
-            <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-green-500"></span> On Time</div>
-            <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-yellow-400"></span> Late</div>
-            <div className="flex items-center gap-1"><span className="w-3 h-3 rounded-full bg-gray-100 border"></span> Absent</div>
-          </div>
         </div>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-3">
-          {/* RECENT ATTENDANCE (DENGAN FOTO) */}
           <div className="rounded-3xl border bg-white p-6 lg:col-span-2">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold">Recent Attendance</h3>

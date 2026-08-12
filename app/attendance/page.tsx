@@ -44,30 +44,54 @@ export default function AttendancePage() {
       }
       setUserRole(profile.role);
 
-      // 4. Ambil data absensi SEMUA karyawan di perusahaan yang sama
-      // Kita menggunakan !inner join untuk memfilter berdasarkan company_id dari tabel profiles
-      const { data: attendanceData, error } = await supabase
-        .from("attendance")
-        .select(`
-          id,
-          status,
-          check_in,
-          check_out,
-          created_at,
-          approval_status,
-          profiles!inner (
-            full_name,
-            company_id
-          )
-        `)
-        .eq("profiles.company_id", profile.company_id)
-        .order("created_at", { ascending: false });
+      // 4. MENGHINDARI ERROR AMBIGUOUS JOIN: Ambil daftar karyawan di perusahaan ini dulu
+      const { data: companyProfiles, error: profileErr } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .eq("company_id", profile.company_id);
 
-      if (error) {
-        console.error("Gagal mengambil data absensi:", error);
-      } else {
-        setAttendances(attendanceData ?? []);
+      if (profileErr) {
+        console.error("Gagal mengambil data karyawan:", profileErr.message);
+        setLoading(false);
+        return;
       }
+
+      const profileIds = companyProfiles?.map(p => p.id) || [];
+
+      // 5. Jika ada karyawan, baru kita tarik riwayat absensinya (TERMASUK FOTO)
+      if (profileIds.length > 0) {
+        const { data: attendanceData, error } = await supabase
+          .from("attendance")
+          .select(`
+            id,
+            profile_id,
+            status,
+            check_in,
+            check_out,
+            created_at,
+            approval_status,
+            photo_check_in,
+            photo_check_out
+          `)
+          .in("profile_id", profileIds) // Hanya ambil absensi milik ID karyawan di atas
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error("Gagal mengambil data absensi:", error.message || error);
+        } else {
+          // Gabungkan data nama dari profil ke dalam data absensi agar tabel UI tetap jalan
+          const mergedData = attendanceData?.map(att => ({
+            ...att,
+            profiles: {
+              full_name: companyProfiles.find(p => p.id === att.profile_id)?.full_name || "Unknown"
+            }
+          }));
+          setAttendances(mergedData ?? []);
+        }
+      } else {
+        setAttendances([]);
+      }
+      
       setLoading(false);
     };
 
@@ -76,13 +100,9 @@ export default function AttendancePage() {
 
   // Fungsi untuk Approve atau Reject absensi
   const handleApproval = async (attendanceId: string, newStatus: 'approved' | 'rejected') => {
-    // Tampilkan konfirmasi
-    if (!confirm(`Apakah Anda yakin ingin melakukan ${newStatus.toUpperCase()} pada absensi ini?`)) {
-      return;
-    }
+    if (!confirm(`Apakah Anda yakin ingin melakukan ${newStatus.toUpperCase()} pada absensi ini?`)) return;
 
     try {
-      // Update data di Supabase
       const { error } = await supabase
         .from("attendance")
         .update({
@@ -94,7 +114,6 @@ export default function AttendancePage() {
 
       if (error) throw error;
 
-      // Update state lokal agar UI langsung berubah tanpa perlu refresh
       setAttendances((prev) =>
         prev.map((item) =>
           item.id === attendanceId
@@ -139,7 +158,7 @@ export default function AttendancePage() {
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <h2 className="text-3xl font-bold text-gray-900">Attendance Logs</h2>
-            <p className="mt-2 text-gray-500">Validasi dan pantau absensi karyawan Anda di sini.</p>
+            <p className="mt-2 text-gray-500">Validasi, lihat foto, dan pantau absensi karyawan Anda di sini.</p>
           </div>
         </div>
 
@@ -149,9 +168,10 @@ export default function AttendancePage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-gray-50/50 text-gray-600">
                 <tr>
-                  <th className="px-6 py-4 font-semibold">Employee Name</th>
+                  <th className="px-6 py-4 font-semibold">Employee</th>
+                  <th className="px-6 py-4 font-semibold">Photo (In / Out)</th>
                   <th className="px-6 py-4 font-semibold">Date & Time</th>
-                  <th className="px-6 py-4 font-semibold">Attendance Status</th>
+                  <th className="px-6 py-4 font-semibold">Status</th>
                   <th className="px-6 py-4 font-semibold text-center">Approval</th>
                   <th className="px-6 py-4 font-semibold text-right">Actions</th>
                 </tr>
@@ -159,7 +179,7 @@ export default function AttendancePage() {
               <tbody className="divide-y divide-gray-50">
                 {attendances.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                       Belum ada data absensi yang masuk.
                     </td>
                   </tr>
@@ -179,10 +199,35 @@ export default function AttendancePage() {
                         <td className="px-6 py-4 font-semibold text-gray-800">
                           {name}
                         </td>
+
+                        {/* Kolom Foto Baru */}
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            {/* Foto Check In */}
+                            {item.photo_check_in ? (
+                              <a href={item.photo_check_in} target="_blank" rel="noreferrer" title="Lihat Foto Masuk">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={item.photo_check_in} alt="In" className="h-10 w-10 rounded-lg object-cover border border-gray-200 shadow-sm hover:scale-110 transition-transform" />
+                              </a>
+                            ) : (
+                              <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center text-[10px] text-gray-400 border border-dashed">No In</div>
+                            )}
+
+                            {/* Foto Check Out */}
+                            {item.photo_check_out ? (
+                              <a href={item.photo_check_out} target="_blank" rel="noreferrer" title="Lihat Foto Pulang">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={item.photo_check_out} alt="Out" className="h-10 w-10 rounded-lg object-cover border border-gray-200 shadow-sm hover:scale-110 transition-transform" />
+                              </a>
+                            ) : (
+                              <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center text-[10px] text-gray-400 border border-dashed">No Out</div>
+                            )}
+                          </div>
+                        </td>
                         
                         <td className="px-6 py-4 text-gray-600">
                           <div className="font-medium text-gray-900">{dateStr}</div>
-                          <div className="text-xs mt-1">In: <span className="font-semibold">{timeIn}</span> | Out: <span className="font-semibold">{timeOut}</span></div>
+                          <div className="text-xs mt-1">In: <span className="font-semibold text-blue-600">{timeIn}</span> | Out: <span className="font-semibold text-orange-500">{timeOut}</span></div>
                         </td>
                         
                         <td className="px-6 py-4">
@@ -209,7 +254,6 @@ export default function AttendancePage() {
                         
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
-                            {/* Tombol Approve/Reject hanya muncul jika statusnya masih pending */}
                             {item.approval_status === "pending" ? (
                               <>
                                 <button
@@ -239,7 +283,6 @@ export default function AttendancePage() {
           </div>
         </div>
 
-        {/* Back Button */}
         <div className="mt-6">
           <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-blue-600 transition-colors">
             ← Back to Dashboard
