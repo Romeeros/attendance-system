@@ -4,6 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -95,9 +104,10 @@ export default function DashboardPage() {
             if (att.status === 'absent') aCount++;
           });
 
+          // ✨ TAMBAHAN: Tarik juga latitude dan longitude agar admin bisa lihat
           const { data: attendanceData } = await supabase
             .from("attendance")
-            .select(`id, profile_id, status, check_in, photo_check_in, created_at`)
+            .select(`id, profile_id, status, check_in, photo_check_in, created_at, latitude, longitude`)
             .in("profile_id", profileIds)
             .order("created_at", { ascending: false })
             .limit(5);
@@ -135,7 +145,7 @@ export default function DashboardPage() {
 
         const { data: myHistory } = await supabase
           .from("attendance")
-          .select("created_at, status")
+          .select("created_at, status, check_in")
           .eq("profile_id", user.id)
           .order("created_at", { ascending: false })
           .limit(30);
@@ -170,9 +180,6 @@ export default function DashboardPage() {
     }
   };
 
-  // ====================================================================
-  // FUNGSI ABSENSI YANG SUDAH BERSIH (TANPA KOLOM FIKTIF)
-  // ====================================================================
   const submitAttendance = async (type: "check_in" | "check_out") => {
     if (!photo || !employeeLocation) {
       alert("Foto dan Lokasi GPS wajib ada sebelum absen!");
@@ -181,7 +188,6 @@ export default function DashboardPage() {
     setIsTakingAttendance(true);
 
     try {
-      // 1. Upload Foto ke Storage
       const fileExt = photo.name ? photo.name.split('.').pop() : 'jpg';
       const fileName = `${userId}-${type}-${Date.now()}.${fileExt}`;
       
@@ -196,7 +202,6 @@ export default function DashboardPage() {
         return;
       }
 
-      // 2. Dapatkan URL Public
       const { data: publicUrlData } = supabase.storage.from('attendances').getPublicUrl(fileName);
       const photoUrl = publicUrlData.publicUrl;
 
@@ -204,19 +209,21 @@ export default function DashboardPage() {
       const currentHour = new Date().getHours();
       const attStatus = (type === "check_in" && currentHour >= 8) ? "late" : "present"; 
 
-      // 3. Simpan ke Database HANYA dengan kolom yang BENAR-BENAR ADA di Supabase kamu
       if (type === "check_in") {
+        // ✨ TAMBAHAN PERBAIKAN: Masukkan latitude dan longitude ke database
         const { data, error } = await supabase.from("attendance").insert({
           profile_id: userId,
           status: attStatus,
           check_in: now,
           photo_check_in: photoUrl,
-          approval_status: "pending"
+          approval_status: "pending",
+          latitude: employeeLocation.lat,
+          longitude: employeeLocation.lng
         }).select().single(); 
 
         if (error) {
-          console.error("Insert Error Object:", JSON.stringify(error, null, 2));
-          alert(`❌ Gagal Simpan DB (Check-in): ${error.message || "Silakan cek console log"}`);
+          console.error("Insert Error:", error);
+          alert(`❌ Gagal Simpan DB (Check-in): ${error.message}`);
           setIsTakingAttendance(false);
           return;
         }
@@ -226,7 +233,6 @@ export default function DashboardPage() {
           setHasCheckedIn(true);
         }
       } else {
-        // Logika untuk CHECK-OUT
         if (!todayAttendanceId) {
           alert("❌ ID Absensi hari ini tidak ditemukan");
           setIsTakingAttendance(false);
@@ -238,8 +244,8 @@ export default function DashboardPage() {
         }).eq("id", todayAttendanceId);
 
         if (error) {
-          console.error("Update Error Object:", JSON.stringify(error, null, 2));
-          alert(`❌ Gagal Simpan DB (Check-out): ${error.message || "Silakan cek console log"}`);
+          console.error("Update Error:", error);
+          alert(`❌ Gagal Simpan DB (Check-out): ${error.message}`);
           setIsTakingAttendance(false);
           return;
         }
@@ -247,8 +253,7 @@ export default function DashboardPage() {
       }
 
       alert(`✅ Berhasil ${type === "check_in" ? "Check-In" : "Check-Out"}!`);
-      setPhoto(null);
-      setPhotoPreview(null);
+      window.location.reload();
     } catch (error: any) {
       console.error("Catch Error:", error);
       alert(`❌ Error Sistem: ${error.message || JSON.stringify(error)}`);
@@ -257,13 +262,49 @@ export default function DashboardPage() {
     setIsTakingAttendance(false);
   };
 
+  // --- OLAHAN DATA UNTUK GRAFIK & SUMMARY EMPLOYEE ---
+  let myPresentCount = 0;
+  let myLateCount = 0;
+  
+  myAttendanceHistory.forEach(att => {
+    if (att.status === 'present') myPresentCount++;
+    if (att.status === 'late') myLateCount++;
+  });
+
+  const chartData = myAttendanceHistory
+    .filter(item => item.check_in)
+    .map(item => {
+      const dateObj = new Date(item.check_in);
+      const hours = dateObj.getHours() + dateObj.getMinutes() / 60;
+      return {
+        tanggal: dateObj.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }),
+        jamDesimal: parseFloat(hours.toFixed(2)),
+        waktuAsli: dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        status: item.status
+      };
+    })
+    .reverse();
+
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-lg">
+          <p className="font-bold text-gray-800">{label}</p>
+          <p className="text-sm font-semibold text-blue-600">Jam Masuk: {payload[0].payload.waktuAsli}</p>
+          <p className="text-xs text-gray-500 capitalize mt-1">Status: {payload[0].payload.status}</p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   if (loading) return <div className="flex min-h-screen items-center justify-center font-semibold text-blue-600">Loading Dashboard...</div>;
 
   if (userRole === "employee") {
     return (
       <main className="min-h-screen bg-gray-50/50 pb-12">
         <header className="sticky top-0 z-30 border-b border-gray-100 bg-white/80 backdrop-blur-md">
-          <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-4 sm:px-8">
+          <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-8">
             <div>
               <h1 className="text-xl font-extrabold text-blue-600">{companyName}</h1>
               <p className="text-xs font-medium text-gray-400">Employee Portal</p>
@@ -275,25 +316,26 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        <div className="mx-auto max-w-3xl px-4 pt-8">
+        <div className="mx-auto max-w-4xl px-4 pt-8 space-y-6">
           <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm text-center">
             <h2 className="text-2xl font-bold text-gray-800">Absensi Hari Ini</h2>
             <p className="mt-1 text-sm text-gray-500">{new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
 
             {hasCheckedIn && hasCheckedOut ? (
-              <div className="mt-8 rounded-2xl bg-green-50 p-6 text-green-700">
+              <div className="mt-8 rounded-2xl bg-green-50 p-6 text-green-700 border border-green-100">
                 <h3 className="text-xl font-bold">🎉 Terima kasih!</h3>
-                <p className="mt-2 text-sm">Anda sudah menyelesaikan absensi hari ini.</p>
+                <p className="mt-2 text-sm">Anda sudah menyelesaikan absensi hari ini. Selamat beristirahat!</p>
               </div>
             ) : (
               <div className="mt-8">
-                <div className="mx-auto mb-6 flex h-64 w-full max-w-sm flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 relative">
+                <div className="mx-auto mb-6 flex h-64 w-full max-w-sm flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 relative group">
                   {photoPreview ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={photoPreview} alt="Preview" className="h-full w-full object-cover" />
                   ) : (
-                    <div className="text-center text-gray-400 p-4">
-                      <p className="text-sm font-medium">📸 Ambil foto selfie untuk absen</p>
+                    <div className="text-center text-gray-400 p-4 transition-transform group-hover:scale-105">
+                      <p className="text-3xl mb-2">📸</p>
+                      <p className="text-sm font-medium">Ambil foto selfie untuk absen</p>
                     </div>
                   )}
                   <input type="file" accept="image/*" capture="user" onChange={handlePhotoCapture} className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0" />
@@ -316,6 +358,66 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          <div className="grid gap-6 md:grid-cols-3">
+            <div className="md:col-span-1 flex flex-col gap-4">
+              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-gray-500">Tepat Waktu</h3>
+                <p className="mt-2 text-4xl font-extrabold text-green-600">{myPresentCount} <span className="text-sm font-medium text-gray-400">Hari</span></p>
+              </div>
+              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-gray-500">Terlambat</h3>
+                <p className="mt-2 text-4xl font-extrabold text-yellow-500">{myLateCount} <span className="text-sm font-medium text-gray-400">Hari</span></p>
+              </div>
+              <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+                <h3 className="text-sm font-semibold text-gray-500">Total Kehadiran</h3>
+                <p className="mt-2 text-4xl font-extrabold text-blue-600">{myAttendanceHistory.length} <span className="text-sm font-medium text-gray-400">Hari</span></p>
+              </div>
+            </div>
+
+            <div className="md:col-span-2 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
+              <h3 className="text-lg font-bold text-gray-800 mb-1">Tren Waktu Kedatangan</h3>
+              <p className="text-xs text-gray-500 mb-6">Riwayat jam masuk kamu beberapa hari terakhir.</p>
+              
+              {chartData.length > 0 ? (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                      <XAxis 
+                        dataKey="tanggal" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 12, fill: '#9ca3af' }} 
+                        dy={10}
+                      />
+                      <YAxis 
+                        domain={['dataMin - 1', 'dataMax + 1']} 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tick={{ fontSize: 12, fill: '#9ca3af' }}
+                        tickFormatter={(val) => `${Math.floor(val)}:00`}
+                      />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Line 
+                        type="monotone" 
+                        dataKey="jamDesimal" 
+                        stroke="#2563eb" 
+                        strokeWidth={4}
+                        dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#2563eb" }}
+                        activeDot={{ r: 6, stroke: "#2563eb", strokeWidth: 2, fill: "#fff" }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-64 w-full flex items-center justify-center rounded-2xl bg-gray-50 border border-dashed border-gray-200">
+                  <p className="text-sm text-gray-400">Belum ada riwayat absensi untuk ditampilkan.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
       </main>
     );
@@ -387,7 +489,20 @@ export default function DashboardPage() {
                       )}
                       <div>
                         <div className="font-semibold text-gray-800">{item.profiles?.full_name}</div>
-                        <div className="text-xs text-gray-500">In: {timeStr}</div>
+                        <div className="text-xs text-gray-500 flex items-center gap-2">
+                          <span>In: {timeStr}</span>
+                          {/* ✨ TAMBAHAN: Link untuk melihat lokasi di Google Maps bagi Admin */}
+                          {item.latitude && item.longitude && (
+                            <a 
+                              href={`https://www.google.com/maps?q=${item.latitude},${item.longitude}`} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="font-medium text-blue-500 hover:underline"
+                            >
+                              📍 Lihat Lokasi
+                            </a>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <span className={`rounded-full px-3 py-1 text-xs font-bold ${item.status === 'present' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>

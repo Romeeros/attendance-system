@@ -58,7 +58,7 @@ export default function AttendancePage() {
 
       const profileIds = companyProfiles?.map(p => p.id) || [];
 
-      // 5. Jika ada karyawan, baru kita tarik riwayat absensinya (TERMASUK FOTO)
+      // 5. Jika ada karyawan, baru kita tarik riwayat absensinya
       if (profileIds.length > 0) {
         const { data: attendanceData, error } = await supabase
           .from("attendance")
@@ -71,9 +71,11 @@ export default function AttendancePage() {
             created_at,
             approval_status,
             photo_check_in,
-            photo_check_out
-          `)
-          .in("profile_id", profileIds) // Hanya ambil absensi milik ID karyawan di atas
+            photo_check_out,
+            latitude,
+            longitude
+          `) // ✨ TAMBAHAN: Tarik data latitude dan longitude
+          .in("profile_id", profileIds) 
           .order("created_at", { ascending: false });
 
         if (error) {
@@ -200,7 +202,7 @@ export default function AttendancePage() {
                           {name}
                         </td>
 
-                        {/* Kolom Foto Baru */}
+                        {/* Kolom Foto */}
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             {/* Foto Check In */}
@@ -227,7 +229,19 @@ export default function AttendancePage() {
                         
                         <td className="px-6 py-4 text-gray-600">
                           <div className="font-medium text-gray-900">{dateStr}</div>
-                          <div className="text-xs mt-1">In: <span className="font-semibold text-blue-600">{timeIn}</span> | Out: <span className="font-semibold text-orange-500">{timeOut}</span></div>
+                          <div className="text-xs mt-1 mb-2">In: <span className="font-semibold text-blue-600">{timeIn}</span> | Out: <span className="font-semibold text-orange-500">{timeOut}</span></div>
+                          
+                          {/* ✨ TAMBAHAN: Tombol Link Lokasi Google Maps */}
+                          {item.latitude && item.longitude && (
+                            <a 
+                              href={`https://www.google.com/maps?q=${item.latitude},${item.longitude}`} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-100 border border-blue-200 transition-colors"
+                            >
+                              📍 Lihat Lokasi Maps
+                            </a>
+                          )}
                         </td>
                         
                         <td className="px-6 py-4">
