@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
@@ -24,6 +24,7 @@ export default function DashboardPage() {
   // State User Umum
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState(""); 
+  const [userName, setUserName] = useState(""); // ✨ STATE BARU UNTUK NAMA USER
   const [companyName, setCompanyName] = useState("Company Attendance");
   const [userId, setUserId] = useState("");
   
@@ -45,6 +46,18 @@ export default function DashboardPage() {
   const [isTakingAttendance, setIsTakingAttendance] = useState(false);
   const [myAttendanceHistory, setMyAttendanceHistory] = useState<any[]>([]); 
 
+  // STATE KHUSUS UNTUK LIVE CAMERA ANTI-GALERI
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+
+  // Pastikan kamera mati saat user pindah halaman / logout
+  useEffect(() => {
+    return () => stopCamera();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const loadDashboard = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -64,11 +77,14 @@ export default function DashboardPage() {
 
       if (!profile) {
         setUserRole("employee");
+        setUserName(user.email?.split('@')[0] || "User"); // Fallback jika tidak ada profile
         setLoading(false);
         return;
       }
 
       setUserRole(profile.role);
+      setUserName(profile.full_name || user.email?.split('@')[0] || "Employee"); // ✨ SIMPAN NAMA DISINI
+
       if (profile?.companies) {
         const companyData = profile.companies as any;
         setCompanyName(companyData.name || "Company Attendance");
@@ -85,7 +101,6 @@ export default function DashboardPage() {
 
         const today = new Date().toISOString().split('T')[0];
         
-        // ✨ PERBAIKAN: Ambil data karyawan HANYA yang BUKAN owner
         const { data: companyProfiles } = await supabase
           .from("profiles")
           .select("id, full_name, role")
@@ -112,11 +127,9 @@ export default function DashboardPage() {
             if (att.status === 'absent') aCount++;
           });
 
-          // Filter siapa saja yang BELUM absen
           const attendedProfileIds = todayAtt?.map(att => att.profile_id) || [];
           missing = (companyProfiles || []).filter(p => !attendedProfileIds.includes(p.id));
 
-          // ✨ DITAMBAHKAN: Tarik data latitude_out dan longitude_out
           const { data: attendanceData } = await supabase
             .from("attendance")
             .select(`id, profile_id, status, check_in, photo_check_in, created_at, latitude, longitude, latitude_out, longitude_out`)
@@ -132,7 +145,7 @@ export default function DashboardPage() {
           })) || [];
         }
 
-        setEmployeeCount(totalEmp); // Total yang tampil akurat tanpa owner
+        setEmployeeCount(totalEmp); 
         setPresentCount(pCount);
         setLateCount(lCount);
         setAbsentCount(aCount);
@@ -173,26 +186,91 @@ export default function DashboardPage() {
     loadDashboard();
   }, [router]);
 
+  // Menempelkan video setelah layarnya dirender oleh React
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && mediaStream) {
+      videoRef.current.srcObject = mediaStream;
+    }
+  }, [isCameraActive, mediaStream]);
+
   const handleLogout = async () => {
+    stopCamera();
     await supabase.auth.signOut();
     router.push("/login");
   };
 
-  const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setPhoto(file);
-      setPhotoPreview(URL.createObjectURL(file));
+  // FUNGSI UNTUK MENGAKTIFKAN LIVE KAMERA
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "user" },
+        audio: false 
+      });
+      
+      setMediaStream(stream); 
+      setIsCameraActive(true); 
+      setPhoto(null);
+      setPhotoPreview(null);
       
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
             setEmployeeLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
           },
-          () => alert("Gagal mendapatkan lokasi GPS!")
+          () => console.warn("GPS belum aktif/diizinkan")
         );
       }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal mengakses kamera! Pastikan izin kamera telah diberikan di browser.");
     }
+  };
+
+  // FUNGSI UNTUK MENGAMBIL SNAPSHOT FOTO
+  const takePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const file = new File([blob], "selfie-live.jpg", { type: "image/jpeg" });
+            setPhoto(file);
+            
+            setPhotoPreview(URL.createObjectURL(file));
+            stopCamera();
+          }
+        }, "image/jpeg", 0.8);
+      }
+    }
+  };
+
+  // FUNGSI UNTUK MEMATIKAN KAMERA
+  const stopCamera = () => {
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop());
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setMediaStream(null);
+    setIsCameraActive(false);
+  };
+
+  // FUNGSI UNTUK MENGULANG FOTO
+  const retakePhoto = () => {
+    setPhoto(null);
+    setPhotoPreview(null);
+    startCamera();
   };
 
   const submitAttendance = async (type: "check_in" | "check_out") => {
@@ -222,7 +300,9 @@ export default function DashboardPage() {
 
       const now = new Date().toISOString();
       const currentHour = new Date().getHours();
-      const attStatus = (type === "check_in" && currentHour >= 8) ? "late" : "present"; 
+      
+      // Jam 9 baru dihitung terlambat
+      const attStatus = (type === "check_in" && currentHour >= 9) ? "late" : "present"; 
 
       if (type === "check_in") {
         const { data, error } = await supabase.from("attendance").insert({
@@ -253,7 +333,6 @@ export default function DashboardPage() {
           return;
         }
         
-        // ✨ PERBAIKAN: Masukkan lokasi ke latitude_out dan longitude_out saat checkout
         const { error } = await supabase.from("attendance").update({
           check_out: now,
           photo_check_out: photoUrl,
@@ -330,10 +409,22 @@ export default function DashboardPage() {
               <h1 className="text-xl font-extrabold text-blue-600">{companyName}</h1>
               <p className="text-xs font-medium text-gray-400">Employee Portal</p>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold uppercase text-green-700 border border-green-200">Employee</span>
-              <button onClick={handleLogout} className="text-sm font-bold text-red-600">Logout</button>
+            
+            {/* ✨ HEADER KARYAWAN DENGAN NAMA */}
+            <div className="flex items-center gap-4">
+              <div className="hidden text-right sm:block">
+                <p className="text-sm font-bold text-gray-800 capitalize">{userName}</p>
+                <span className="inline-block mt-0.5 rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold uppercase text-green-700 border border-green-200 shadow-sm">Employee</span>
+              </div>
+              {/* Tampilan HP (Sembunyikan nama agar tidak kepanjangan/nabrak layar) */}
+              <div className="sm:hidden">
+                <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold uppercase text-green-700 border border-green-200">Employee</span>
+              </div>
+              <button onClick={handleLogout} className="rounded-2xl bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100 border border-red-100">
+                Logout
+              </button>
             </div>
+            
           </div>
         </header>
 
@@ -349,30 +440,57 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="mt-8">
-                <div className="mx-auto mb-6 flex h-64 w-full max-w-sm flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50 relative group">
+                
+                {/* AREA LIVE CAMERA ANTI-GALERI */}
+                <div className="mx-auto mb-6 flex h-[350px] w-full max-w-sm flex-col items-center justify-center overflow-hidden rounded-3xl border-4 border-gray-100 bg-black relative shadow-inner">
+                  
+                  <canvas ref={canvasRef} className="hidden" />
+
                   {photoPreview ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={photoPreview} alt="Preview" className="h-full w-full object-cover" />
+                    <div className="relative h-full w-full">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={photoPreview} alt="Preview" className="h-full w-full object-cover" />
+                      <button onClick={retakePhoto} className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-white/90 px-5 py-2.5 text-sm font-bold text-gray-800 shadow-lg backdrop-blur-md hover:bg-white transition-all border border-gray-200 hover:scale-105">
+                        🔄 Ulangi Foto
+                      </button>
+                    </div>
+                  ) : isCameraActive ? (
+                    <div className="relative h-full w-full bg-black">
+                      <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover scale-x-[-1]" />
+                      
+                      <div className="absolute inset-0 border-[40px] border-black/20 pointer-events-none rounded-[100px]"></div>
+                      
+                      <button onClick={takePhoto} className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-blue-600 px-8 py-3 text-sm font-black text-white shadow-lg border-2 border-white/50 hover:bg-blue-700 hover:scale-105 transition-all">
+                        📸 JEPRET
+                      </button>
+                    </div>
                   ) : (
-                    <div className="text-center text-gray-400 p-4 transition-transform group-hover:scale-105">
-                      <p className="text-3xl mb-2">📸</p>
-                      <p className="text-sm font-medium">Ambil foto selfie untuk absen</p>
+                    <div className="flex h-full w-full flex-col items-center justify-center bg-gray-50 p-6 text-center">
+                      <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 text-3xl">📷</div>
+                      <h3 className="mb-2 text-lg font-bold text-gray-800">Verifikasi Wajah</h3>
+                      <p className="mb-6 text-xs font-medium text-gray-500">Foto harus diambil langsung, fitur upload galeri dinonaktifkan.</p>
+                      <button onClick={startCamera} className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition hover:-translate-y-0.5">
+                        Aktifkan Kamera
+                      </button>
                     </div>
                   )}
-                  <input type="file" accept="image/*" capture="user" onChange={handlePhotoCapture} className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0" />
                 </div>
 
-                {employeeLocation && <p className="mb-6 text-xs font-semibold text-green-600">✓ Lokasi GPS Terdeteksi</p>}
+                {employeeLocation ? (
+                   <p className="mb-6 inline-flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-600 border border-green-200">📍 Lokasi Terverifikasi</p>
+                ) : (
+                   <p className="mb-6 text-xs font-medium text-gray-400">Izinkan akses lokasi GPS saat kamera menyala.</p>
+                )}
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
                   {!hasCheckedIn && (
                     <button onClick={() => submitAttendance("check_in")} disabled={isTakingAttendance || !photo || !employeeLocation} className="rounded-xl bg-blue-600 px-8 py-3.5 font-bold text-white shadow-md transition hover:bg-blue-700 disabled:opacity-50">
-                      {isTakingAttendance ? "Mengunggah..." : "1. Absen Masuk"}
+                      {isTakingAttendance ? "Memproses..." : "1. Kirim Absen Masuk"}
                     </button>
                   )}
                   {hasCheckedIn && !hasCheckedOut && (
                     <button onClick={() => submitAttendance("check_out")} disabled={isTakingAttendance || !photo || !employeeLocation} className="rounded-xl bg-orange-500 px-8 py-3.5 font-bold text-white shadow-md transition hover:bg-orange-600 disabled:opacity-50">
-                      {isTakingAttendance ? "Mengunggah..." : "2. Absen Pulang"}
+                      {isTakingAttendance ? "Memproses..." : "2. Kirim Absen Pulang"}
                     </button>
                   )}
                 </div>
@@ -447,11 +565,10 @@ export default function DashboardPage() {
   // TAMPILAN ADMIN / OWNER
   // ==========================================
   
-  // Data Grafik Bulat (Donut Chart)
   const donutData = [
-    { name: 'Tepat Waktu', value: presentCount, color: '#10b981' }, // emerald-500
-    { name: 'Terlambat', value: lateCount, color: '#eab308' }, // yellow-500
-    { name: 'Belum Absen', value: missingEmployees.length, color: '#f87171' }, // red-400
+    { name: 'Tepat Waktu', value: presentCount, color: '#10b981' }, 
+    { name: 'Terlambat', value: lateCount, color: '#eab308' }, 
+    { name: 'Belum Absen', value: missingEmployees.length, color: '#f87171' }, 
   ];
 
   return (
@@ -462,18 +579,22 @@ export default function DashboardPage() {
             <h1 className="text-xl font-extrabold text-blue-600">{companyName}</h1>
             <p className="text-xs font-medium text-gray-400">Management Dashboard</p>
           </div>
+          
+          {/* ✨ HEADER ADMIN DENGAN NAMA (Sama dengan Employee) */}
           <div className="flex items-center gap-4">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-bold text-gray-800">{userEmail}</p>
-              <span className="inline-block mt-0.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase border bg-purple-50 text-purple-700 border-purple-200">{userRole}</span>
+              <p className="text-sm font-bold text-gray-800 capitalize">{userName}</p>
+              <span className="inline-block mt-0.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase border bg-purple-50 text-purple-700 border-purple-200 shadow-sm">{userRole}</span>
             </div>
-            <button onClick={handleLogout} className="rounded-2xl bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100 border border-red-100">Logout</button>
+            <button onClick={handleLogout} className="rounded-2xl bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100 border border-red-100">
+              Logout
+            </button>
           </div>
+
         </div>
       </header>
 
       <div className="mx-auto max-w-7xl px-4 pt-8 sm:px-8">
-        {/* KARTU STATISTIK ATAS */}
         <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4 mb-8">
           <div className="rounded-3xl border bg-white p-6 shadow-sm border-gray-100 hover:shadow-md transition">
             <h3 className="text-4xl font-black text-gray-800">{employeeCount}</h3>
@@ -494,16 +615,15 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-8 lg:grid-cols-3">
-          {/* KOLOM KIRI (LEBIH LEBAR): Grafik & Recent */}
           <div className="lg:col-span-2 space-y-8">
-            
-            {/* ✨ KOTAK GRAFIK KEREN */}
+            <Link href="/rekap" className="flex w-full items-center justify-center rounded-2xl bg-indigo-50 py-3.5 text-sm font-bold text-indigo-600 hover:bg-indigo-100 border border-indigo-100 hover:-translate-y-0.5 transition-all mt-3">
+              📊 Laporan Rekap Bulanan
+            </Link>
             <div className="rounded-3xl border bg-white p-8 shadow-sm border-gray-100">
               <h3 className="text-xl font-bold text-gray-800">Statistik Kehadiran Hari Ini</h3>
               <p className="text-sm text-gray-500 mb-6">Proporsi karyawan yang sudah masuk vs yang belum.</p>
               
               <div className="flex flex-col sm:flex-row items-center justify-between gap-8">
-                {/* Donut Chart */}
                 <div className="h-48 w-48 relative">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -525,14 +645,12 @@ export default function DashboardPage() {
                       />
                     </PieChart>
                   </ResponsiveContainer>
-                  {/* Teks di tengah Donut */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-2xl font-black text-gray-800">{presentCount + lateCount}</span>
                     <span className="text-[10px] font-bold uppercase text-gray-400">Sudah Absen</span>
                   </div>
                 </div>
 
-                {/* Legend Cantik */}
                 <div className="flex-1 space-y-4 w-full">
                   {donutData.map((item, index) => (
                     <div key={index} className="flex items-center justify-between p-3 rounded-2xl bg-gray-50 border border-gray-100">
@@ -549,7 +667,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* RECENT ATTENDANCE */}
             <div className="rounded-3xl border bg-white p-8 shadow-sm border-gray-100">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-bold text-gray-800">Riwayat Masuk Terbaru</h3>
@@ -576,7 +693,6 @@ export default function DashboardPage() {
                           <div>
                             <div className="font-bold text-gray-900 text-base">{item.profiles?.full_name}</div>
                             
-                            {/* ✨ PERBAIKAN: MENAMPILKAN 2 LOKASI (MASUK & PULANG) */}
                             <div className="mt-1 flex flex-wrap items-center gap-2">
                               <span className="text-xs font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md">Masuk: {timeStr}</span>
                               
@@ -611,7 +727,6 @@ export default function DashboardPage() {
             </div>
           </div>
           
-          {/* KOLOM KANAN: Menu & Missing List */}
           <div className="flex flex-col gap-8">
             <div className="rounded-3xl border bg-white p-8 shadow-sm border-gray-100">
               <h3 className="text-xl font-bold text-gray-800">Quick Actions</h3>
@@ -626,7 +741,6 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* DAFTAR BELUM ABSEN (TANPA OWNER) */}
             <div className="rounded-3xl border bg-white p-8 shadow-sm border-red-50">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-xl">⚠️</div>
@@ -635,6 +749,9 @@ export default function DashboardPage() {
                   <p className="text-xs font-medium text-gray-400">Harus ditegur nih!</p>
                 </div>
               </div>
+              <Link href="/rekap-tidak-hadir" className="flex w-full items-center justify-center rounded-2xl bg-red-50 py-3.5 text-sm font-bold text-red-600 hover:bg-red-100 border border-red-100 hover:-translate-y-0.5 transition-all mt-3">
+                ⚠️ Rekap Belum Absen (Alpa)
+              </Link>
               
               <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                 {missingEmployees.length === 0 ? (
