@@ -242,7 +242,7 @@ export default function AttendancePage() {
                         </tr>
 
                         {/* DATA ABSENSI DI TANGGAL TERSEBUT */}
-                        {groupedAttendances[dateKey].map((item) => {
+                        {groupedAttendances[dateKey].map((item: any) => {
                           const name = item.profiles?.full_name || "Unknown";
                           const timeIn = item.check_in ? new Date(item.check_in).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "--:--";
                           const timeOut = item.check_out ? new Date(item.check_out).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "--:--";
