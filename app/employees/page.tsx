@@ -109,22 +109,28 @@ export default function EmployeesPage() {
     }
   };
 
-  // DELETE USER
+  // ✨ DELETE USER (SUDAH DIUPGRADE ERROR HANDLING-NYA) ✨
   const handleDelete = async (employeeId: string, employeeName: string) => {
-    if (!confirm(`Hapus ${employeeName} permanen?`)) return;
+    if (!confirm(`Yakin ingin menghapus ${employeeName} secara permanen? Data absensi dan profilnya akan hilang.`)) return;
+    
     try {
       const response = await fetch("/api/users/delete", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: employeeId }),
       });
+      
+      const result = await response.json();
+
       if (!response.ok) {
-        alert("Gagal menghapus user.");
+        alert(`❌ Gagal: ${result.error || "Kesalahan Server"}`);
         return;
       }
+      
+      alert(`✅ User ${employeeName} berhasil dihapus permanen!`);
       setEmployees((prev) => prev.filter((emp) => emp.id !== employeeId));
-    } catch (error) {
-      alert("Terjadi kesalahan sistem.");
+    } catch (error: any) {
+      alert(`❌ Terjadi kesalahan sistem: ${error.message}`);
     }
   };
 
@@ -220,7 +226,7 @@ export default function EmployeesPage() {
           </button>
         </div>
 
-        {/* MODAL EDIT (Muncul menimpa layar jika editingEmployee ada) */}
+        {/* MODAL EDIT */}
         {editingEmployee && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
             <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
@@ -228,8 +234,6 @@ export default function EmployeesPage() {
               <p className="mt-1 text-sm text-gray-500">Atur hak akses dan titik presensi untuk {editingEmployee.full_name}.</p>
               
               <form onSubmit={handleUpdateUser} className="mt-6 space-y-4">
-                
-                {/* ROLE - Disembunyikan jika yang diedit adalah owner */}
                 {editingEmployee.role !== "owner" && (
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-700">Role</label>
@@ -237,7 +241,7 @@ export default function EmployeesPage() {
                       value={editRole}
                       onChange={(e) => setEditRole(e.target.value as "admin" | "employee")}
                       className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-200 disabled:bg-gray-100"
-                      disabled={currentUserRole === "admin"} // Admin gabisa ubah role
+                      disabled={currentUserRole === "admin"}
                     >
                       <option value="employee">Employee</option>
                       {currentUserRole === "owner" && <option value="admin">Admin</option>}
@@ -309,10 +313,9 @@ export default function EmployeesPage() {
           </div>
         )}
 
-        {/* ... FORM ADD USER SAMA SEPERTI SEBELUMNYA ... */}
+        {/* FORM ADD USER */}
         {showForm && (
           <div className="mt-8 rounded-2xl bg-white p-6 shadow">
-            {/* Form Create (Sudah ada di kodemu sebelumnya) */}
              <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold">Add New User</h2>
