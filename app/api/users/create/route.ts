@@ -16,6 +16,7 @@ export async function POST(request: Request) {
       password,
       role,
       company_id,
+      division, // ✨ Menangkap data divisi dari frontend
     } = body;
 
     if (!name || !email || !password || !role || !company_id) {
@@ -73,7 +74,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Simpan data ke profiles
+    // Simpan data ke profiles beserta divisinya
     const {
       error: profileError,
     } = await supabaseAdmin
@@ -84,6 +85,7 @@ export async function POST(request: Request) {
         full_name: name,
         email,
         role,
+        division: division || null, // ✨ Memasukkan divisi ke database (jika kosong jadi null)
       });
 
     if (profileError) {

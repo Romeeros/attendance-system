@@ -4,7 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
-    const { id, role, latitude, longitude, radius } = body;
+    // ✨ MENANGKAP VARIABEL 'password' DAN 'division' DARI FRONTEND
+    const { id, role, latitude, longitude, radius, password, division } = body;
 
     if (!id) {
       return NextResponse.json({ error: "User ID wajib diisi." }, { status: 400 });
@@ -16,19 +17,31 @@ export async function PUT(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Update tabel profiles
-    const { error } = await supabaseAdmin
+    // 1. Update tabel profiles (Lokasi, Role, dan Divisi)
+    const { error: profileError } = await supabaseAdmin
       .from("profiles")
       .update({
         role,
+        division, // ✨ Menyimpan data divisi ke dalam database
         latitude: latitude ? parseFloat(latitude) : null,
         longitude: longitude ? parseFloat(longitude) : null,
         radius: radius ? parseInt(radius) : 100,
       })
       .eq("id", id);
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (profileError) {
+      return NextResponse.json({ error: profileError.message }, { status: 400 });
+    }
+
+    // 2. JIKA PASSWORD DIISI, UPDATE KE SISTEM AUTHENTICATION SUPABASE
+    if (password && password.trim() !== "") {
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(id, {
+        password: password,
+      });
+
+      if (authError) {
+        return NextResponse.json({ error: `Gagal ganti password: ${authError.message}` }, { status: 400 });
+      }
     }
 
     return NextResponse.json({ success: true });

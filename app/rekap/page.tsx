@@ -5,14 +5,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-// Tipe data untuk menampung rekapan per karyawan
+// ✨ UPDATE: Tambahkan tipe data untuk Sakit dan Izin
 interface EmployeeSummary {
   id: string;
   name: string;
   present: number;
   late: number;
+  sick: number;    // Kolom Sakit
+  leave: number;   // Kolom Izin
   absent: number;
-  totalAttendances: number;
+  totalAttendances: number; // Hanya menghitung present + late
 }
 
 export default function MonthlyReportPage() {
@@ -20,8 +22,6 @@ export default function MonthlyReportPage() {
   const [loading, setLoading] = useState(true);
   const [companyName, setCompanyName] = useState("Company Attendance");
 
-  // State untuk filter bulan (Format: YYYY-MM)
-  // Otomatis mengambil bulan berjalan saat halaman dibuka
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const today = new Date();
     const year = today.getFullYear();
@@ -29,9 +29,9 @@ export default function MonthlyReportPage() {
     return `${year}-${month}`;
   });
 
-  // State untuk data rekap
   const [reportData, setReportData] = useState<EmployeeSummary[]>([]);
   const [totalCompanyAttendances, setTotalCompanyAttendances] = useState(0);
+  const [totalRecords, setTotalRecords] = useState(0); // Untuk cek apakah ada data sama sekali
 
   useEffect(() => {
     const fetchMonthlyReport = async () => {
@@ -42,7 +42,6 @@ export default function MonthlyReportPage() {
         return;
       }
 
-      // Validasi hak akses Admin/Owner
       const { data: profile } = await supabase
         .from("profiles")
         .select("id, role, company_id, companies(name)")
@@ -59,7 +58,6 @@ export default function MonthlyReportPage() {
         setCompanyName(compData.name || "Company Attendance");
       }
 
-      // Ambil daftar SEMUA karyawan (kecuali owner) di perusahaan ini
       const { data: employees } = await supabase
         .from("profiles")
         .select("id, full_name")
@@ -74,15 +72,13 @@ export default function MonthlyReportPage() {
 
       const employeeIds = employees.map(emp => emp.id);
 
-      // Hitung tanggal awal dan akhir dari bulan yang dipilih
       const [yearStr, monthStr] = selectedMonth.split('-');
       const year = parseInt(yearStr);
-      const month = parseInt(monthStr) - 1; // Index bulan di JS mulai dari 0
+      const month = parseInt(monthStr) - 1; 
 
       const startDate = new Date(year, month, 1).toISOString();
-      const endDate = new Date(year, month + 1, 0, 23, 59, 59).toISOString(); // Hari terakhir di bulan tersebut
+      const endDate = new Date(year, month + 1, 0, 23, 59, 59).toISOString(); 
 
-      // Ambil seluruh data absensi dalam rentang waktu bulan tersebut
       const { data: attendances } = await supabase
         .from("attendance")
         .select("profile_id, status")
@@ -90,48 +86,53 @@ export default function MonthlyReportPage() {
         .gte("created_at", startDate)
         .lte("created_at", endDate);
 
-      // Olah data: Kelompokkan absensi ke masing-masing karyawan
-      let totalAll = 0;
+      setTotalRecords(attendances?.length || 0); // Simpan total semua data yang masuk
+
+      let totalHadirAll = 0;
       const summary: EmployeeSummary[] = employees.map(emp => {
-        // Cari absensi milik karyawan ini
         const empAttendances = attendances?.filter(att => att.profile_id === emp.id) || [];
 
         const presentCount = empAttendances.filter(att => att.status === 'present').length;
         const lateCount = empAttendances.filter(att => att.status === 'late').length;
+        // ✨ UPDATE: Filter data Sakit dan Izin
+        const sickCount = empAttendances.filter(att => att.status === 'sakit').length;
+        const leaveCount = empAttendances.filter(att => att.status === 'izin').length;
         const absentCount = empAttendances.filter(att => att.status === 'absent').length;
-        const total = presentCount + lateCount;
+        
+        // ✨ UPDATE: Total masuk hanya dihitung dari present dan late
+        const totalMasuk = presentCount + lateCount;
 
-        totalAll += total;
+        totalHadirAll += totalMasuk;
 
         return {
           id: emp.id,
           name: emp.full_name,
           present: presentCount,
           late: lateCount,
+          sick: sickCount,
+          leave: leaveCount,
           absent: absentCount,
-          totalAttendances: total,
+          totalAttendances: totalMasuk,
         };
       });
 
-      // Urutkan berdasarkan yang paling rajin (total kehadiran terbanyak)
+      // Urutkan berdasarkan yang paling sering masuk
       summary.sort((a, b) => b.totalAttendances - a.totalAttendances);
 
       setReportData(summary);
-      setTotalCompanyAttendances(totalAll);
+      setTotalCompanyAttendances(totalHadirAll);
       setLoading(false);
     };
 
     fetchMonthlyReport();
   }, [selectedMonth, router]);
 
-  // Format teks bulan untuk tampilan judul (Misal: "Agustus 2026")
   const getFormattedMonthName = () => {
     const [year, month] = selectedMonth.split('-');
     const date = new Date(parseInt(year), parseInt(month) - 1, 1);
     return date.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
   };
 
-  // Fungsi Cetak PDF Halaman
   const handlePrint = () => {
     window.print();
   };
@@ -149,7 +150,6 @@ export default function MonthlyReportPage() {
 
   return (
     <main className="min-h-screen bg-gray-50/50 print:bg-white pb-12">
-      {/* HEADER UTAMA */}
       <header className="border-b bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-10 print:hidden">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-8 py-5">
           <div>
@@ -164,15 +164,13 @@ export default function MonthlyReportPage() {
 
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-8 print:p-0">
 
-        {/* KONTROL & JUDUL */}
         <div className="mb-8 flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
           <div>
             <h2 className="text-3xl font-extrabold text-gray-900">Rekap Kehadiran Bulanan</h2>
-            <p className="mt-2 text-gray-500 font-medium">Pantau total masuk, keterlambatan, dan alpa tim kamu disini.</p>
+            <p className="mt-2 text-gray-500 font-medium">Pantau total masuk, keterlambatan, sakit, izin, dan alpa tim kamu disini.</p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 print:hidden">
-            {/* ✨ INPUT FILTER BULAN OTOMATIS */}
             <div className="flex flex-col">
               <label htmlFor="month-filter" className="text-xs font-bold text-gray-500 mb-1 ml-1 uppercase tracking-wider">Filter Bulan</label>
               <input 
@@ -193,15 +191,13 @@ export default function MonthlyReportPage() {
           </div>
         </div>
 
-        {/* HEADER KHUSUS PRINT */}
         <div className="hidden print:block mb-8 text-center border-b-2 border-black pb-6">
           <h1 className="text-3xl font-black text-black">{companyName}</h1>
           <h2 className="text-xl font-bold mt-2">Laporan Rekapitulasi Kehadiran Karyawan</h2>
           <p className="text-md font-semibold mt-1 uppercase">Periode: {getFormattedMonthName()}</p>
         </div>
 
-        {/* KARTU STATISTIK RINGKASAN (Sembunyikan kalau datanya 0 agar UI bersih) */}
-        {totalCompanyAttendances > 0 && (
+        {totalRecords > 0 && (
           <div className="grid gap-5 sm:grid-cols-3 mb-8 print:hidden">
             <div className="rounded-3xl border bg-white p-6 shadow-sm border-gray-100 flex items-center justify-between">
               <div>
@@ -227,7 +223,6 @@ export default function MonthlyReportPage() {
           </div>
         )}
 
-        {/* TABEL REKAPITULASI */}
         <div className="overflow-hidden rounded-3xl bg-white shadow-lg border border-gray-100 print:shadow-none print:border-none print:rounded-none">
           {loading ? (
             <div className="p-16 flex flex-col items-center justify-center">
@@ -238,41 +233,40 @@ export default function MonthlyReportPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 
-                {/* Header tabel kita sembunyikan saat data kosong agar terlihat lebih rapi dan fokus ke ilustrasi */}
-                {totalCompanyAttendances > 0 && (
+                {totalRecords > 0 && (
                   <thead className="bg-gradient-to-r from-gray-50 to-white text-gray-600 print:bg-transparent print:border-b-2 print:border-black">
                     <tr>
                       <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs">Rank</th>
                       <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs">Nama Karyawan</th>
                       <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs text-center text-green-600 print:text-black">Tepat Waktu</th>
                       <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs text-center text-yellow-500 print:text-black">Terlambat</th>
-                      <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs text-center text-red-500 print:text-black">Tidak Hadir</th>
+                      {/* ✨ UPDATE: Header Kolom Sakit & Izin */}
+                      <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs text-center text-orange-500 print:text-black">Sakit</th>
+                      <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs text-center text-purple-600 print:text-black">Izin</th>
+                      <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs text-center text-red-500 print:text-black">Alpa</th>
                       <th className="px-6 py-5 font-extrabold uppercase tracking-widest text-xs text-center text-blue-600 print:text-black">Total Masuk</th>
                     </tr>
                   </thead>
                 )}
 
                 <tbody className="divide-y divide-gray-50">
-                  {/* ✨ INI DIA EMPTY STATE YANG LEBIH ASIK & MODERN ✨ */}
-                  {totalCompanyAttendances === 0 ? (
+                  {totalRecords === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-24 text-center bg-gray-50/30">
+                      {/* ✨ UPDATE: colSpan diubah jadi 8 karena ada penambahan 2 kolom */}
+                      <td colSpan={8} className="px-6 py-24 text-center bg-gray-50/30">
                         <div className="flex flex-col items-center justify-center max-w-md mx-auto">
                           
-                          {/* Ilustrasi Circle */}
                           <div className="h-28 w-28 rounded-full bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-6 shadow-inner border border-blue-100/50 relative">
                             <span className="text-6xl absolute -top-2 hover:-translate-y-2 transition-transform cursor-pointer">📭</span>
                             <div className="absolute -bottom-2 -right-2 h-8 w-8 bg-white rounded-full flex items-center justify-center shadow-sm border border-gray-100 text-sm">✨</div>
                           </div>
                           
-                          {/* Copywriting yang lebih luwes */}
                           <h3 className="text-2xl font-black text-gray-800 mb-3 tracking-tight">Wah, masih kosong nih!</h3>
                           <p className="text-sm font-medium text-gray-500 leading-relaxed px-4">
-                            Belum ada satupun karyawan yang absen di bulan <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{getFormattedMonthName()}</span>. 
+                            Belum ada satupun data absensi (termasuk izin/sakit) di bulan <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{getFormattedMonthName()}</span>. 
                             Mungkin bulannya belum dimulai, atau tim kamu lagi libur panjang? 🏖️
                           </p>
                           
-                          {/* Hint untuk user */}
                           <div className="mt-8 flex items-center gap-3 text-xs font-bold text-gray-400 bg-white px-5 py-3 rounded-2xl border border-gray-200 shadow-sm">
                             <span className="text-lg">💡</span> 
                             <span>Coba ganti filter ke bulan sebelumnya di pojok kanan atas.</span>
@@ -285,7 +279,6 @@ export default function MonthlyReportPage() {
                     reportData.map((emp, index) => (
                       <tr key={emp.id} className="hover:bg-blue-50/30 transition-colors print:break-inside-avoid">
 
-                        {/* Peringkat berdasarkan Kerajinan */}
                         <td className="px-6 py-5">
                           <div className={`flex h-8 w-8 items-center justify-center rounded-full font-black text-xs ${
                             index === 0 ? "bg-gradient-to-br from-yellow-200 to-yellow-400 text-yellow-900 border border-yellow-300 shadow-sm shadow-yellow-200/50" :
@@ -311,6 +304,20 @@ export default function MonthlyReportPage() {
                         <td className="px-6 py-5 text-center">
                           <span className="inline-block min-w-[3rem] rounded-lg bg-yellow-50 px-3 py-1 font-black text-yellow-600 border border-yellow-100 print:border-none print:bg-transparent print:text-black">
                             {emp.late}
+                          </span>
+                        </td>
+
+                        {/* ✨ UPDATE: Cell Kolom Sakit */}
+                        <td className="px-6 py-5 text-center">
+                          <span className="inline-block min-w-[3rem] rounded-lg bg-orange-50 px-3 py-1 font-black text-orange-500 border border-orange-100 print:border-none print:bg-transparent print:text-black">
+                            {emp.sick}
+                          </span>
+                        </td>
+
+                        {/* ✨ UPDATE: Cell Kolom Izin */}
+                        <td className="px-6 py-5 text-center">
+                          <span className="inline-block min-w-[3rem] rounded-lg bg-purple-50 px-3 py-1 font-black text-purple-600 border border-purple-100 print:border-none print:bg-transparent print:text-black">
+                            {emp.leave}
                           </span>
                         </td>
 
