@@ -49,6 +49,7 @@ export default function DashboardPage() {
   const [isTakingAttendance, setIsTakingAttendance] = useState(false);
   const [myAttendanceHistory, setMyAttendanceHistory] = useState<any[]>([]); 
 
+  // ✨ INI STATE UNTUK FITUR SAKIT & IZIN
   const [attendanceTab, setAttendanceTab] = useState<"hadir" | "sakit" | "izin">("hadir");
   const [reasonText, setReasonText] = useState("");
 
@@ -373,7 +374,7 @@ export default function DashboardPage() {
     setIsTakingAttendance(false);
   };
 
-  // ✨ UPDATE LOGIKA STATISTIK EMPLOYEE
+  // LOGIKA STATISTIK EMPLOYEE
   let myPresentCount = 0;
   let myLateCount = 0;
   let mySickCount = 0;
@@ -471,6 +472,7 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="mt-8">
+                {/* ✨ INI DIA BAGIAN TAB PILIHAN HADIR/SAKIT/IZIN */}
                 {!hasCheckedIn && (
                   <div className="mx-auto mb-6 flex w-full max-w-sm rounded-xl bg-gray-100 p-1.5 shadow-inner">
                     <button onClick={() => setAttendanceTab("hadir")} className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition-all ${attendanceTab === "hadir" ? "bg-white text-blue-600 shadow" : "text-gray-500 hover:text-gray-700"}`}>
@@ -485,6 +487,7 @@ export default function DashboardPage() {
                   </div>
                 )}
 
+                {/* ✨ INI FORM KETERANGANNYA */}
                 {(!hasCheckedIn && attendanceTab !== "hadir") ? (
                   <div className="mx-auto w-full max-w-sm text-left animate-in fade-in slide-in-from-bottom-4 duration-300 border border-gray-100 p-5 rounded-2xl bg-gray-50">
                     <label className="mb-2 block text-sm font-bold text-gray-700">Keterangan / Alasan {attendanceTab === "sakit" ? "Sakit" : "Izin"}</label>
@@ -507,6 +510,7 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   <>
+                    {/* AREA KAMERA JIKA PILIH HADIR */}
                     <div className="mx-auto mb-6 flex h-[350px] w-full max-w-sm flex-col items-center justify-center overflow-hidden rounded-3xl border-4 border-gray-100 bg-black relative shadow-inner animate-in fade-in zoom-in-95 duration-300">
                       <canvas ref={canvasRef} className="hidden" />
                       {photoPreview ? (
@@ -559,7 +563,13 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* ✨ UPDATE: KARTU STATISTIK KARYAWAN */}
+          {/* ✨ TAMBAHAN TOMBOL RIWAYAT LENGKAP DI SINI */}
+          <div className="flex justify-end mb-2">
+            <Link href="/my-attendance" className="inline-flex items-center gap-2 rounded-2xl bg-indigo-50 px-6 py-3 text-sm font-bold text-indigo-600 border border-indigo-100 hover:bg-indigo-600 hover:text-white transition-all shadow-sm hover:shadow hover:-translate-y-0.5">
+              📅 Lihat Riwayat Lengkapku →
+            </Link>
+          </div>
+
           <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 mb-6">
             <div className="rounded-3xl border bg-white p-5 shadow-sm border-blue-100">
               <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wider">Total Masuk</h3>
@@ -578,6 +588,7 @@ export default function DashboardPage() {
               <p className="mt-2 text-3xl font-black text-red-600">{myAbsentCount} <span className="text-xs text-gray-400 font-medium">Hari</span></p>
             </div>
           </div>
+          
 
           <div className="grid gap-6 md:grid-cols-3">
             <div className="md:col-span-1 flex flex-col gap-4">
