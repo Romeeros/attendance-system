@@ -37,6 +37,11 @@ export default function DashboardPage() {
   const [absentCount, setAbsentCount] = useState(0);
   const [recentAttendance, setRecentAttendance] = useState<any[]>([]);
   const [missingEmployees, setMissingEmployees] = useState<any[]>([]);
+  
+  // ✨ STATE BARU UNTUK FITUR LIBUR (ADMIN)
+  const [inputHolidayDate, setInputHolidayDate] = useState("");
+  const [inputHolidayDesc, setInputHolidayDesc] = useState("");
+  const [isSettingHoliday, setIsSettingHoliday] = useState(false);
 
   // STATE UNTUK EMPLOYEE
   const [todayAttendanceId, setTodayAttendanceId] = useState<string | null>(null);
@@ -48,8 +53,12 @@ export default function DashboardPage() {
   const [employeeLocation, setEmployeeLocation] = useState<{lat: number, lng: number} | null>(null);
   const [isTakingAttendance, setIsTakingAttendance] = useState(false);
   const [myAttendanceHistory, setMyAttendanceHistory] = useState<any[]>([]); 
+  
+  // ✨ STATE BARU UNTUK FITUR LIBUR (EMPLOYEE)
+  const [isTodayHoliday, setIsTodayHoliday] = useState(false);
+  const [holidayDesc, setHolidayDesc] = useState("");
 
-  // ✨ INI STATE UNTUK FITUR SAKIT & IZIN
+  // STATE UNTUK FITUR SAKIT & IZIN
   const [attendanceTab, setAttendanceTab] = useState<"hadir" | "sakit" | "izin">("hadir");
   const [reasonText, setReasonText] = useState("");
 
@@ -102,6 +111,20 @@ export default function DashboardPage() {
         setCompanyName(companyData.name || "Company Attendance");
       }
 
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // Cek apakah hari ini libur
+      const { data: holidayData } = await supabase
+        .from("holidays")
+        .select("description")
+        .eq("date", todayStr)
+        .maybeSingle();
+
+      if (holidayData) {
+        setIsTodayHoliday(true);
+        setHolidayDesc(holidayData.description);
+      }
+
       // ==========================================
       // JIKA OWNER / ADMIN
       // ==========================================
@@ -111,8 +134,6 @@ export default function DashboardPage() {
             return;
         }
 
-        const today = new Date().toISOString().split('T')[0];
-        
         const { data: companyProfiles } = await supabase
           .from("profiles")
           .select("id, full_name, role")
@@ -131,7 +152,7 @@ export default function DashboardPage() {
             .from("attendance")
             .select("profile_id, status")
             .in("profile_id", profileIds)
-            .gte("created_at", `${today}T00:00:00Z`);
+            .gte("created_at", `${todayStr}T00:00:00Z`);
 
           todayAtt?.forEach(att => {
             if (att.status === 'present') pCount++;
@@ -172,13 +193,12 @@ export default function DashboardPage() {
       // JIKA EMPLOYEE
       // ==========================================
       else {
-        const today = new Date().toISOString().split('T')[0];
         const { data: myTodayAttendance } = await supabase
           .from("attendance")
           .select("*")
           .eq("profile_id", user.id)
-          .gte("created_at", `${today}T00:00:00Z`)
-          .lte("created_at", `${today}T23:59:59Z`)
+          .gte("created_at", `${todayStr}T00:00:00Z`)
+          .lte("created_at", `${todayStr}T23:59:59Z`)
           .maybeSingle();
 
         if (myTodayAttendance) {
@@ -213,6 +233,29 @@ export default function DashboardPage() {
     stopCamera();
     await supabase.auth.signOut();
     router.push("/login");
+  };
+
+  // ✨ FUNGSI ADMIN UNTUK MENGIRIM JADWAL LIBUR
+  const handleSetHoliday = async () => {
+    if (!inputHolidayDate || !inputHolidayDesc) {
+      alert("Tanggal dan Keterangan libur harus diisi!");
+      return;
+    }
+    setIsSettingHoliday(true);
+    try {
+      const { error } = await supabase.from("holidays").insert({
+        date: inputHolidayDate,
+        description: inputHolidayDesc
+      });
+      if (error) throw error;
+      alert("✅ Hari libur berhasil ditambahkan!");
+      setInputHolidayDate("");
+      setInputHolidayDesc("");
+      window.location.reload();
+    } catch (error: any) {
+      alert(`❌ Gagal: ${error.message}`);
+    }
+    setIsSettingHoliday(false);
   };
 
   const startCamera = async () => {
@@ -389,7 +432,6 @@ export default function DashboardPage() {
     if (att.status === 'absent') myAbsentCount++;
   });
 
-  // Total Masuk (Hanya Present & Late)
   const myTotalMasuk = myPresentCount + myLateCount;
 
   const chartData = myAttendanceHistory
@@ -440,9 +482,6 @@ export default function DashboardPage() {
                 <p className="text-sm font-bold text-gray-800 capitalize">{userName}</p>
                 <span className="inline-block mt-0.5 rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold uppercase text-green-700 border border-green-200 shadow-sm">Employee</span>
               </div>
-              <div className="sm:hidden">
-                <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-[10px] font-bold uppercase text-green-700 border border-green-200">Employee</span>
-              </div>
               <button onClick={handleLogout} className="rounded-2xl bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100 border border-red-100">
                 Logout
               </button>
@@ -455,7 +494,17 @@ export default function DashboardPage() {
             <h2 className="text-2xl font-bold text-gray-800">Absensi Hari Ini</h2>
             <p className="mt-1 text-sm text-gray-500">{new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
 
-            {hasCheckedIn && isAttendanceDone ? (
+            {/* ✨ LOGIKA PEMBLOKIRAN SAAT HARI LIBUR */}
+            {isTodayHoliday ? (
+              <div className="mt-8 rounded-2xl border border-blue-200 bg-blue-50 p-8 text-center text-blue-800 shadow-sm animate-in fade-in zoom-in-95 duration-300">
+                <p className="mb-3 text-5xl">🏖️</p>
+                <h3 className="text-2xl font-black mb-1">Hari Ini Libur!</h3>
+                <p className="text-sm font-medium opacity-80 mb-4">{holidayDesc}</p>
+                <span className="text-xs font-bold text-blue-600 bg-white/60 px-4 py-2 rounded-full border border-blue-100">
+                  Form Absensi Dinonaktifkan
+                </span>
+              </div>
+            ) : hasCheckedIn && isAttendanceDone ? (
               <div className={`mt-8 rounded-2xl p-6 border ${
                 todayStatus === 'sakit' ? 'bg-orange-50 text-orange-800 border-orange-200' :
                 todayStatus === 'izin' ? 'bg-purple-50 text-purple-800 border-purple-200' :
@@ -472,7 +521,6 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="mt-8">
-                {/* ✨ INI DIA BAGIAN TAB PILIHAN HADIR/SAKIT/IZIN */}
                 {!hasCheckedIn && (
                   <div className="mx-auto mb-6 flex w-full max-w-sm rounded-xl bg-gray-100 p-1.5 shadow-inner">
                     <button onClick={() => setAttendanceTab("hadir")} className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition-all ${attendanceTab === "hadir" ? "bg-white text-blue-600 shadow" : "text-gray-500 hover:text-gray-700"}`}>
@@ -487,7 +535,6 @@ export default function DashboardPage() {
                   </div>
                 )}
 
-                {/* ✨ INI FORM KETERANGANNYA */}
                 {(!hasCheckedIn && attendanceTab !== "hadir") ? (
                   <div className="mx-auto w-full max-w-sm text-left animate-in fade-in slide-in-from-bottom-4 duration-300 border border-gray-100 p-5 rounded-2xl bg-gray-50">
                     <label className="mb-2 block text-sm font-bold text-gray-700">Keterangan / Alasan {attendanceTab === "sakit" ? "Sakit" : "Izin"}</label>
@@ -510,7 +557,6 @@ export default function DashboardPage() {
                   </div>
                 ) : (
                   <>
-                    {/* AREA KAMERA JIKA PILIH HADIR */}
                     <div className="mx-auto mb-6 flex h-[350px] w-full max-w-sm flex-col items-center justify-center overflow-hidden rounded-3xl border-4 border-gray-100 bg-black relative shadow-inner animate-in fade-in zoom-in-95 duration-300">
                       <canvas ref={canvasRef} className="hidden" />
                       {photoPreview ? (
@@ -563,7 +609,6 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* ✨ TAMBAHAN TOMBOL RIWAYAT LENGKAP DI SINI */}
           <div className="flex justify-end mb-2">
             <Link href="/my-attendance" className="inline-flex items-center gap-2 rounded-2xl bg-indigo-50 px-6 py-3 text-sm font-bold text-indigo-600 border border-indigo-100 hover:bg-indigo-600 hover:text-white transition-all shadow-sm hover:shadow hover:-translate-y-0.5">
               📅 Lihat Riwayat Lengkapku →
@@ -824,6 +869,39 @@ export default function DashboardPage() {
                 <Link href="/employees" className="flex w-full items-center justify-center rounded-2xl border-2 border-gray-100 py-3.5 text-sm font-bold text-gray-700 hover:bg-gray-50 hover:-translate-y-0.5 transition-all">
                   Employees Directory
                 </Link>
+              </div>
+            </div>
+
+            {/* ✨ PANEL ADMIN UNTUK SETTING HARI LIBUR */}
+            <div className="rounded-3xl border bg-white p-8 shadow-sm border-indigo-50">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-xl">🏖️</div>
+                <div>
+                  <h3 className="text-lg font-bold text-indigo-600">Atur Hari Libur</h3>
+                  <p className="text-xs font-medium text-gray-400">Kunci form absensi karyawan.</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                <input 
+                  type="date" 
+                  value={inputHolidayDate} 
+                  onChange={(e) => setInputHolidayDate(e.target.value)} 
+                  className="w-full rounded-xl border border-gray-200 p-3 text-sm focus:border-indigo-500 focus:outline-none" 
+                />
+                <input 
+                  type="text" 
+                  placeholder="Keterangan (Cth: Libur Idul Fitri)" 
+                  value={inputHolidayDesc} 
+                  onChange={(e) => setInputHolidayDesc(e.target.value)} 
+                  className="w-full rounded-xl border border-gray-200 p-3 text-sm focus:border-indigo-500 focus:outline-none" 
+                />
+                <button 
+                  onClick={handleSetHoliday} 
+                  disabled={isSettingHoliday} 
+                  className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-bold text-white hover:bg-indigo-700 transition disabled:opacity-50 mt-2"
+                >
+                  {isSettingHoliday ? "Menyimpan..." : "Simpan Hari Libur"}
+                </button>
               </div>
             </div>
 
