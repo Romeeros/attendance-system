@@ -79,6 +79,16 @@ const MONTHS = [
 const TIME_ZONE = "Asia/Jakarta";
 
 /* =========================================================
+   DASHBOARD PATH
+========================================================= */
+
+const getDashboardPath = (role: string) => {
+  if (role === "owner") return "/owner/dashboard";
+  if (role === "admin") return "/admin/dashboard";
+  return "/dashboard";
+};
+
+/* =========================================================
    DATE HELPERS
 ========================================================= */
 
@@ -216,6 +226,9 @@ export default function MonthlyReportPage() {
   const [loading, setLoading] =
     useState(true);
 
+  const [userRole, setUserRole] =
+    useState("");
+
   const [companyName, setCompanyName] =
     useState("Company Attendance");
 
@@ -293,6 +306,12 @@ export default function MonthlyReportPage() {
           setLoading(false);
           return;
         }
+
+        /* ================================================
+           SIMPAN ROLE USER
+        ================================================ */
+
+        setUserRole(profile.role);
 
         /* ================================================
            EMPLOYEE TIDAK BOLEH MELIHAT REKAP
@@ -1315,7 +1334,7 @@ export default function MonthlyReportPage() {
           </p>
 
           <Link
-            href="/dashboard"
+            href={getDashboardPath(userRole)}
             className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-900 transition hover:bg-slate-100"
           >
             Kembali
@@ -1368,7 +1387,7 @@ export default function MonthlyReportPage() {
           </div>
 
           <Link
-            href="/dashboard"
+            href={getDashboardPath(userRole)}
             className="flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 shadow-sm transition hover:border-blue-200 hover:text-blue-600 sm:min-h-11 sm:gap-2 sm:rounded-2xl sm:px-5 sm:text-sm"
           >
             <span className="text-base">
@@ -1735,8 +1754,7 @@ export default function MonthlyReportPage() {
                                     index +
                                       1
                                   ).padStart(
-                                    2,
-                                    "0"
+                                    2
                                   )}
                                 </span>
 
@@ -2058,8 +2076,7 @@ export default function MonthlyReportPage() {
                                 index +
                                   1
                               ).padStart(
-                                2,
-                                "0"
+                                2
                               )}
                             </span>
                           </td>
@@ -2212,10 +2229,10 @@ export default function MonthlyReportPage() {
 
                                 <span
                                   className={`text-[9px] font-black uppercase tracking-wider ${
-                                    employee.absent >
+                                    employee.absent ===
                                     0
-                                      ? "text-red-400"
-                                      : "text-emerald-400"
+                                      ? "text-emerald-400"
+                                      : "text-red-400"
                                   }`}
                                 >
                                   {employee.absent ===
