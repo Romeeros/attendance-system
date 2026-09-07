@@ -915,8 +915,19 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center font-semibold text-blue-600">
-        Loading Dashboard...
+      <div className="min-h-screen bg-[#f5f7fb]">
+        <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6">
+          <div className="flex flex-col items-center gap-5">
+            <div className="relative h-16 w-16">
+              <div className="absolute inset-0 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+              <div className="absolute inset-3 rounded-full bg-white shadow-sm" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm font-black tracking-wide text-slate-800">Menyiapkan dashboard</p>
+              <p className="mt-1 text-xs text-slate-400">Memuat data absensi kamu...</p>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -930,671 +941,568 @@ export default function DashboardPage() {
     todayStatus === "sakit" ||
     todayStatus === "izin";
 
+  const statusLabel =
+    todayStatus === "late"
+      ? "Terlambat"
+      : todayStatus === "present"
+        ? "Hadir"
+        : todayStatus === "sakit"
+          ? "Sakit"
+          : todayStatus === "izin"
+            ? "Izin"
+            : "Belum Absen";
+
+  const todayTime = myAttendanceHistory[0]?.check_in
+    ? new Date(myAttendanceHistory[0].check_in).toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
+  const StatCard = ({
+    label,
+    value,
+    caption,
+    tone,
+    icon,
+  }: {
+    label: string;
+    value: number;
+    caption: string;
+    tone: "blue" | "green" | "orange" | "purple" | "red";
+    icon: string;
+  }) => {
+    const tones = {
+      blue: "bg-blue-50 text-blue-600 ring-blue-100",
+      green: "bg-emerald-50 text-emerald-600 ring-emerald-100",
+      orange: "bg-orange-50 text-orange-600 ring-orange-100",
+      purple: "bg-violet-50 text-violet-600 ring-violet-100",
+      red: "bg-red-50 text-red-600 ring-red-100",
+    };
+
+    return (
+      <div className="group relative overflow-hidden rounded-[26px] border border-slate-200/70 bg-white p-5 shadow-[0_12px_40px_-24px_rgba(15,23,42,0.28)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_-25px_rgba(15,23,42,0.35)]">
+        <div className="absolute -right-8 -top-8 h-20 w-20 rounded-full bg-slate-50 transition-transform duration-500 group-hover:scale-150" />
+        <div className="relative flex items-start justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
+            <p className="mt-2 text-3xl font-black tracking-tight text-slate-900">
+              {value}
+              <span className="ml-1 text-xs font-bold text-slate-400">{caption}</span>
+            </p>
+          </div>
+          <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ring-1 ${tones[tone]}`}>
+            <span className="text-lg">{icon}</span>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // =========================================================
   // DASHBOARD KARYAWAN
   // =========================================================
 
   return (
-    <main className="min-h-screen bg-gray-50/50 pb-12">
+    <main className="min-h-screen overflow-x-hidden bg-[#f5f7fb] pb-14 text-slate-900">
+      {/* Background decoration */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-200/30 blur-3xl" />
+        <div className="absolute -right-32 top-1/3 h-96 w-96 rounded-full bg-indigo-200/25 blur-3xl" />
+      </div>
+
       {/* =====================================================
           HEADER
       ===================================================== */}
-
-      <header className="sticky top-0 z-30 border-b border-gray-100 bg-white/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4 sm:px-8">
-          <div>
-            <h1 className="text-xl font-extrabold text-blue-600">
-              {companyName}
-            </h1>
-
-            <p className="text-xs font-medium text-gray-400">
-              Employee Portal
-            </p>
+      <header className="sticky top-0 z-40 border-b border-white/60 bg-white/75 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-lg font-black text-white shadow-lg shadow-blue-500/25">
+              {companyName.slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-black tracking-tight text-slate-900 sm:text-base">
+                {companyName}
+              </h1>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
+                Employee Portal
+              </p>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-bold capitalize text-gray-800">
+              <p className="max-w-40 truncate text-sm font-extrabold capitalize text-slate-800">
                 {userName}
               </p>
-
-              <span className="mt-0.5 inline-block rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-[10px] font-bold uppercase text-green-700 shadow-sm">
-                Employee
-              </span>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                ● Employee
+              </p>
             </div>
-
             <button
               onClick={handleLogout}
-              className="rounded-2xl border border-red-100 bg-red-50 px-4 py-2 text-xs font-bold text-red-600 transition hover:bg-red-100"
+              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-extrabold text-slate-600 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:px-4"
             >
-              Logout
+              Keluar
             </button>
           </div>
         </div>
       </header>
 
-      {/* =====================================================
-          CONTENT
-      ===================================================== */}
+      <div className="mx-auto max-w-6xl space-y-6 px-4 pt-6 sm:px-6 sm:pt-8 lg:px-8">
+        {/* ===================================================
+            HERO
+        =================================================== */}
+        <section className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-[#0f172a] via-[#172554] to-[#1d4ed8] p-6 text-white shadow-[0_25px_70px_-30px_rgba(30,64,175,0.55)] sm:p-8">
+          <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-blue-400/20 blur-2xl" />
+          <div className="absolute -bottom-24 left-1/3 h-60 w-60 rounded-full bg-indigo-400/20 blur-3xl" />
+          <div className="absolute right-7 top-7 hidden h-20 w-20 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl sm:block" />
 
-      <div className="mx-auto max-w-4xl space-y-6 px-4 pt-8">
+          <div className="relative z-10 grid gap-7 md:grid-cols-[1fr_auto] md:items-center">
+            <div>
+              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-blue-100 backdrop-blur-md">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
+                Sistem Absensi Aktif
+              </div>
+              <p className="text-sm font-medium text-blue-100">Selamat datang kembali,</p>
+              <h2 className="mt-1 max-w-xl text-3xl font-black tracking-tight sm:text-4xl">
+                {userName}
+                <span className="text-blue-300">.</span>
+              </h2>
+              <p className="mt-3 max-w-lg text-sm leading-6 text-blue-100/75">
+                Pantau kehadiran, lakukan absensi, dan lihat performa kedatangan kamu dalam satu dashboard.
+              </p>
+            </div>
+
+            <div className="min-w-[190px] rounded-[24px] border border-white/10 bg-white/10 p-4 backdrop-blur-xl">
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-200">Hari ini</p>
+              <p className="mt-2 text-lg font-extrabold capitalize">
+                {new Date().toLocaleDateString("id-ID", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                })}
+              </p>
+              <div className="mt-3 flex items-center gap-2">
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
+                    isAttendanceDone
+                      ? "bg-emerald-400/15 text-emerald-200"
+                      : "bg-amber-400/15 text-amber-200"
+                  }`}
+                >
+                  {isAttendanceDone ? "ABSENSI SELESAI" : "BELUM SELESAI"}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* ===================================================
             ABSENSI HARI INI
         =================================================== */}
+        <section className="overflow-hidden rounded-[30px] border border-slate-200/70 bg-white shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)]">
+          <div className="border-b border-slate-100 px-5 py-5 sm:px-7">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-blue-600" />
+                  <h2 className="text-lg font-black tracking-tight text-slate-900">Absensi Hari Ini</h2>
+                </div>
+                <p className="mt-1 text-xs text-slate-400">
+                  Verifikasi kehadiran menggunakan foto langsung dan lokasi GPS.
+                </p>
+              </div>
 
-        <div className="rounded-3xl border border-gray-100 bg-white p-6 text-center shadow-sm">
-          <h2 className="text-2xl font-bold text-gray-800">
-            Absensi Hari Ini
-          </h2>
-
-          <p className="mt-1 text-sm text-gray-500">
-            {new Date().toLocaleDateString(
-              "id-ID",
-              {
-                weekday: "long",
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              }
-            )}
-          </p>
-
-          {/* =================================================
-              HARI LIBUR
-          ================================================= */}
-
-          {isTodayHoliday ? (
-            <div className="mt-8 animate-in rounded-2xl border border-blue-200 bg-blue-50 p-8 text-center text-blue-800 fade-in zoom-in-95 duration-300">
-              <p className="mb-3 text-5xl">
-                🏖️
-              </p>
-
-              <h3 className="mb-1 text-2xl font-black">
-                Hari Ini Libur!
-              </h3>
-
-              <p className="mb-4 text-sm font-medium opacity-80">
-                {holidayDesc}
-              </p>
-
-              <span className="rounded-full border border-blue-100 bg-white/60 px-4 py-2 text-xs font-bold text-blue-600">
-                Form Absensi Dinonaktifkan
-              </span>
-            </div>
-          ) : hasCheckedIn &&
-            isAttendanceDone ? (
-
-            /* =================================================
-               ABSENSI SELESAI
-            ================================================= */
-
-            <div
-              className={`mt-8 rounded-2xl border p-6 ${
-                todayStatus ===
-                "sakit"
-                  ? "border-orange-200 bg-orange-50 text-orange-800"
-                  : todayStatus ===
-                    "izin"
-                  ? "border-purple-200 bg-purple-50 text-purple-800"
-                  : "border-green-100 bg-green-50 text-green-700"
-              }`}
-            >
-              <h3 className="text-xl font-bold">
-                {todayStatus ===
-                "sakit"
-                  ? "🤒 Semoga lekas sembuh!"
-                  : todayStatus ===
-                    "izin"
-                  ? "📝 Pengajuan Izin Tercatat"
-                  : "🎉 Terima kasih!"}
-              </h3>
-
-              <p className="mt-2 text-sm font-medium">
-                {todayStatus ===
-                  "sakit" ||
-                todayStatus ===
-                  "izin"
-                  ? `Data ketidakhadiran dengan alasan ${todayStatus} telah terkirim ke HRD.`
-                  : "Anda sudah menyelesaikan absensi pulang hari ini. Selamat beristirahat!"}
-              </p>
-            </div>
-          ) : (
-
-            /* =================================================
-               FORM ABSENSI
-            ================================================= */
-
-            <div className="mt-8">
-
-              {/* =============================================
-                  TAB HADIR / SAKIT / IZIN
-              ============================================= */}
-
-              {!hasCheckedIn && (
-                <div className="mx-auto mb-6 flex w-full max-w-sm rounded-xl bg-gray-100 p-1.5 shadow-inner">
-
-                  <button
-                    onClick={() =>
-                      setAttendanceTab(
-                        "hadir"
-                      )
-                    }
-                    className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition-all ${
-                      attendanceTab ===
-                      "hadir"
-                        ? "bg-white text-blue-600 shadow"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    🏢 Hadir
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      setAttendanceTab(
-                        "sakit"
-                      )
-                    }
-                    className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition-all ${
-                      attendanceTab ===
-                      "sakit"
-                        ? "bg-white text-orange-500 shadow"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    🤒 Sakit
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      setAttendanceTab(
-                        "izin"
-                      )
-                    }
-                    className={`flex-1 rounded-lg py-2.5 text-sm font-bold transition-all ${
-                      attendanceTab ===
-                      "izin"
-                        ? "bg-white text-purple-600 shadow"
-                        : "text-gray-500 hover:text-gray-700"
-                    }`}
-                  >
-                    📝 Izin
-                  </button>
+              {todayStatus && (
+                <div
+                  className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-black ${
+                    todayStatus === "present"
+                      ? "bg-emerald-50 text-emerald-600"
+                      : todayStatus === "late"
+                        ? "bg-amber-50 text-amber-600"
+                        : todayStatus === "sakit"
+                          ? "bg-orange-50 text-orange-600"
+                          : "bg-violet-50 text-violet-600"
+                  }`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {statusLabel}
+                  {todayTime && ` • ${todayTime}`}
                 </div>
               )}
+            </div>
+          </div>
 
-              {/* =============================================
-                  FORM SAKIT / IZIN
-              ============================================= */}
-
-              {!hasCheckedIn &&
-              attendanceTab !==
-                "hadir" ? (
-                <div className="mx-auto w-full max-w-sm animate-in rounded-2xl border border-gray-100 bg-gray-50 p-5 text-left fade-in slide-in-from-bottom-4 duration-300">
-
-                  <label className="mb-2 block text-sm font-bold text-gray-700">
-                    Keterangan / Alasan{" "}
-                    {attendanceTab ===
-                    "sakit"
-                      ? "Sakit"
-                      : "Izin"}
-                  </label>
-
-                  <textarea
-                    value={
-                      reasonText
-                    }
-                    onChange={(e) =>
-                      setReasonText(
-                        e.target
-                          .value
-                      )
-                    }
-                    placeholder={`Tuliskan secara detail alasan kenapa Anda ${attendanceTab} hari ini...`}
-                    className="w-full rounded-xl border border-gray-300 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                    rows={4}
-                  />
-
-                  <button
-                    onClick={() =>
-                      submitAttendance(
-                        "check_in"
-                      )
-                    }
-                    disabled={
-                      isTakingAttendance ||
-                      !reasonText.trim()
-                    }
-                    className={`mt-5 w-full rounded-xl py-3.5 font-bold text-white shadow-md transition disabled:opacity-50 ${
-                      attendanceTab ===
-                      "sakit"
-                        ? "bg-orange-500 hover:bg-orange-600"
-                        : "bg-purple-600 hover:bg-purple-700"
-                    }`}
-                  >
-                    {isTakingAttendance
-                      ? "Memproses..."
-                      : `Kirim Pengajuan ${
-                          attendanceTab ===
-                          "sakit"
-                            ? "Sakit"
-                            : "Izin"
-                        }`}
-                  </button>
+          <div className="p-5 sm:p-7">
+            {isTodayHoliday ? (
+              <div className="relative overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-8 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm">🏖️</div>
+                <h3 className="text-2xl font-black text-slate-900">Hari Ini Libur</h3>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{holidayDesc}</p>
+                <span className="mt-5 inline-flex rounded-full bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-blue-600 shadow-sm">
+                  Form Absensi Dinonaktifkan
+                </span>
+              </div>
+            ) : hasCheckedIn && isAttendanceDone ? (
+              <div
+                className={`relative overflow-hidden rounded-[26px] border p-7 ${
+                  todayStatus === "sakit"
+                    ? "border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50"
+                    : todayStatus === "izin"
+                      ? "border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50"
+                      : "border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50"
+                }`}
+              >
+                <div className="flex flex-col items-center text-center">
+                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm">
+                    {todayStatus === "sakit" ? "🤒" : todayStatus === "izin" ? "📝" : "✓"}
+                  </div>
+                  <h3 className="text-xl font-black text-slate-900">
+                    {todayStatus === "sakit"
+                      ? "Semoga lekas sembuh!"
+                      : todayStatus === "izin"
+                        ? "Pengajuan Izin Tercatat"
+                        : "Absensi hari ini selesai!"}
+                  </h3>
+                  <p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">
+                    {todayStatus === "sakit" || todayStatus === "izin"
+                      ? `Data ketidakhadiran dengan alasan ${todayStatus} telah terkirim dan menunggu proses HRD.`
+                      : "Terima kasih sudah menyelesaikan absensi. Semoga harimu berjalan dengan lancar!"}
+                  </p>
                 </div>
-              ) : (
+              </div>
+            ) : (
+              <div>
+                {!hasCheckedIn && (
+                  <div className="mx-auto mb-6 grid w-full max-w-lg grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1.5">
+                    {[
+                      { id: "hadir" as const, label: "Hadir", icon: "🏢", active: "text-blue-600" },
+                      { id: "sakit" as const, label: "Sakit", icon: "🤒", active: "text-orange-600" },
+                      { id: "izin" as const, label: "Izin", icon: "📝", active: "text-violet-600" },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setAttendanceTab(tab.id)}
+                        className={`rounded-xl px-2 py-3 text-xs font-black transition-all ${
+                          attendanceTab === tab.id
+                            ? `bg-white ${tab.active} shadow-sm`
+                            : "text-slate-400 hover:text-slate-700"
+                        }`}
+                      >
+                        <span className="mr-1">{tab.icon}</span>
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                /* =============================================
-                   KAMERA
-                ============================================= */
+                {!hasCheckedIn && attendanceTab !== "hadir" ? (
+                  <div className="mx-auto max-w-lg rounded-[26px] border border-slate-200 bg-slate-50/80 p-5 sm:p-6">
+                    <div className="mb-5 flex items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm">
+                        {attendanceTab === "sakit" ? "🤒" : "📝"}
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-900">
+                          Pengajuan {attendanceTab === "sakit" ? "Sakit" : "Izin"}
+                        </h3>
+                        <p className="mt-1 text-xs leading-5 text-slate-400">
+                          Jelaskan alasan dengan singkat dan jelas agar mudah diproses.
+                        </p>
+                      </div>
+                    </div>
 
-                <>
-                  <div className="relative mx-auto mb-6 flex h-[350px] w-full max-w-sm flex-col items-center justify-center overflow-hidden rounded-3xl border-4 border-gray-100 bg-black shadow-inner animate-in fade-in zoom-in-95 duration-300">
-
-                    <canvas
-                      ref={canvasRef}
-                      className="hidden"
+                    <textarea
+                      value={reasonText}
+                      onChange={(e) => setReasonText(e.target.value)}
+                      placeholder={`Tuliskan alasan kenapa Anda ${attendanceTab} hari ini...`}
+                      className="min-h-32 w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                      rows={4}
                     />
 
-                    {/* =======================================
-                        FOTO PREVIEW
-                    ======================================= */}
-
-                    {photoPreview ? (
-                      <div className="relative h-full w-full">
-
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={
-                            photoPreview
-                          }
-                          alt="Preview"
-                          className="h-full w-full object-cover"
-                        />
-
-                        <button
-                          onClick={
-                            retakePhoto
-                          }
-                          className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200 bg-white/90 px-5 py-2.5 text-sm font-bold text-gray-800 shadow-lg backdrop-blur-md transition-all hover:scale-105 hover:bg-white"
-                        >
-                          🔄 Ulangi Foto
-                        </button>
-                      </div>
-
-                    ) : isCameraActive ? (
-
-                      /* =====================================
-                         CAMERA AKTIF
-                      ===================================== */
-
-                      <div className="relative h-full w-full bg-black">
-
-                        <video
-                          ref={
-                            videoRef
-                          }
-                          autoPlay
-                          playsInline
-                          muted
-                          className="h-full w-full scale-x-[-1] object-cover"
-                        />
-
-                        <div className="pointer-events-none absolute inset-0 rounded-[100px] border-[40px] border-black/20" />
-
-                        <button
-                          onClick={
-                            takePhoto
-                          }
-                          className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border-2 border-white/50 bg-blue-600 px-8 py-3 text-sm font-black text-white shadow-lg transition-all hover:scale-105 hover:bg-blue-700"
-                        >
-                          📸 JEPRET
-                        </button>
-                      </div>
-
-                    ) : (
-
-                      /* =====================================
-                         CAMERA BELUM AKTIF
-                      ===================================== */
-
-                      <div className="flex h-full w-full flex-col items-center justify-center bg-gray-50 p-6 text-center">
-
-                        <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 text-3xl">
-                          📷
-                        </div>
-
-                        <h3 className="mb-2 text-lg font-bold text-gray-800">
-                          Verifikasi Wajah
-                        </h3>
-
-                        <p className="mb-6 text-xs font-medium text-gray-500">
-                          Foto harus diambil
-                          langsung, fitur upload
-                          galeri dinonaktifkan.
-                        </p>
-
-                        <button
-                          onClick={
-                            startCamera
-                          }
-                          className="rounded-xl bg-blue-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:-translate-y-0.5 hover:bg-blue-700"
-                        >
-                          Aktifkan Kamera
-                        </button>
-                      </div>
-                    )}
+                    <button
+                      onClick={() => submitAttendance("check_in")}
+                      disabled={isTakingAttendance || !reasonText.trim()}
+                      className={`mt-4 w-full rounded-2xl py-3.5 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 ${
+                        attendanceTab === "sakit"
+                          ? "bg-gradient-to-r from-orange-500 to-amber-500 shadow-orange-500/20"
+                          : "bg-gradient-to-r from-violet-600 to-purple-600 shadow-violet-500/20"
+                      }`}
+                    >
+                      {isTakingAttendance ? "Memproses..." : `Kirim Pengajuan ${attendanceTab === "sakit" ? "Sakit" : "Izin"}`}
+                    </button>
                   </div>
+                ) : (
+                  <>
+                    {/* CAMERA */}
+                    <div className="mx-auto w-full max-w-md">
+                      <div className="relative aspect-[4/3] overflow-hidden rounded-[30px] border-4 border-white bg-slate-950 shadow-[0_20px_60px_-25px_rgba(15,23,42,0.5)] ring-1 ring-slate-200">
+                        <canvas ref={canvasRef} className="hidden" />
 
-                  {/* =========================================
-                      STATUS GPS
-                  ========================================= */}
+                        {photoPreview ? (
+                          <div className="relative h-full w-full">
+                            <img src={photoPreview} alt="Preview" className="h-full w-full object-cover" />
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5 pt-14">
+                              <button
+                                onClick={retakePhoto}
+                                className="mx-auto flex items-center gap-2 rounded-full border border-white/20 bg-white/90 px-5 py-2.5 text-xs font-black text-slate-800 shadow-xl backdrop-blur-md transition hover:scale-105"
+                              >
+                                🔄 Ambil Ulang Foto
+                              </button>
+                            </div>
+                            <div className="absolute left-4 top-4 rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-[10px] font-black text-white backdrop-blur-md">
+                              ✓ FOTO TERVERIFIKASI
+                            </div>
+                          </div>
+                        ) : isCameraActive ? (
+                          <div className="relative h-full w-full bg-black">
+                            <video
+                              ref={videoRef}
+                              autoPlay
+                              playsInline
+                              muted
+                              className="h-full w-full scale-x-[-1] object-cover"
+                            />
+                            <div className="pointer-events-none absolute inset-0">
+                              <div className="absolute inset-6 rounded-[28px] border border-white/25" />
+                              <div className="absolute left-1/2 top-1/2 h-56 w-44 -translate-x-1/2 -translate-y-1/2 rounded-[45%] border-2 border-white/30" />
+                              <div className="absolute left-1/2 top-1/2 h-px w-44 -translate-x-1/2 bg-white/20" />
+                            </div>
+                            <div className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1.5 text-[10px] font-black text-white backdrop-blur-md">
+                              ● LIVE CAMERA
+                            </div>
+                            <button
+                              onClick={takePhoto}
+                              className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border-4 border-white/80 bg-white px-6 py-3 text-xs font-black text-blue-700 shadow-2xl transition hover:scale-105"
+                            >
+                              <span className="text-base">📸</span> AMBIL FOTO
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 p-7 text-center">
+                            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-[24px] bg-white text-3xl shadow-sm ring-1 ring-blue-100">
+                              📷
+                            </div>
+                            <h3 className="text-lg font-black text-slate-900">Verifikasi Wajah</h3>
+                            <p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">
+                              Ambil foto secara langsung. Upload dari galeri dinonaktifkan untuk menjaga validitas absensi.
+                            </p>
+                            <button
+                              onClick={startCamera}
+                              className="mt-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-xs font-black text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 hover:shadow-xl"
+                            >
+                              Aktifkan Kamera
+                            </button>
+                          </div>
+                        )}
+                      </div>
 
-                  {employeeLocation ? (
-                    <p className="mb-6 inline-flex animate-in items-center gap-1.5 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-bold text-green-600 fade-in zoom-in-95">
-                      📍 Lokasi Terverifikasi
-                    </p>
-                  ) : (
-                    <p className="mb-6 text-xs font-medium text-gray-400">
-                      Izinkan akses lokasi GPS saat
-                      kamera menyala.
-                    </p>
-                  )}
+                      <div className="mt-4 flex justify-center">
+                        {employeeLocation ? (
+                          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-[10px] font-black text-emerald-600">
+                            <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]" />
+                            GPS TERVERIFIKASI
+                          </div>
+                        ) : (
+                          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-bold text-slate-400">
+                            📍 Izinkan akses lokasi GPS
+                          </div>
+                        )}
+                      </div>
+                    </div>
 
-                  {/* =========================================
-                      BUTTON ABSEN
-                  ========================================= */}
-
-                  <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
-
-                    {/* CHECK IN */}
-
-                    {!hasCheckedIn && (
-                      <button
-                        onClick={() =>
-                          submitAttendance(
-                            "check_in"
-                          )
-                        }
-                        disabled={
-                          isTakingAttendance ||
-                          !photo ||
-                          !employeeLocation
-                        }
-                        className="animate-in rounded-xl bg-blue-600 px-8 py-3.5 font-bold text-white shadow-md transition hover:bg-blue-700 disabled:opacity-50 slide-in-from-bottom-4 duration-300"
-                      >
-                        {isTakingAttendance
-                          ? "Memproses..."
-                          : "1. Kirim Absen Masuk"}
-                      </button>
-                    )}
-
-                    {/* CHECK OUT */}
-
-                    {hasCheckedIn &&
-                      !hasCheckedOut && (
+                    <div className="mx-auto mt-6 flex max-w-md flex-col gap-3">
+                      {!hasCheckedIn && (
                         <button
-                          onClick={() =>
-                            submitAttendance(
-                              "check_out"
-                            )
-                          }
-                          disabled={
-                            isTakingAttendance ||
-                            !photo ||
-                            !employeeLocation
-                          }
-                          className="animate-in rounded-xl bg-orange-500 px-8 py-3.5 font-bold text-white shadow-md transition hover:bg-orange-600 disabled:opacity-50 slide-in-from-bottom-4 duration-300"
+                          onClick={() => submitAttendance("check_in")}
+                          disabled={isTakingAttendance || !photo || !employeeLocation}
+                          className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-sm font-black text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40"
                         >
-                          {isTakingAttendance
-                            ? "Memproses..."
-                            : "2. Kirim Absen Pulang"}
+                          {isTakingAttendance ? "Memproses..." : "✓ Kirim Absen Masuk"}
                         </button>
                       )}
+
+                      {hasCheckedIn && !hasCheckedOut && (
+                        <button
+                          onClick={() => submitAttendance("check_out")}
+                          disabled={isTakingAttendance || !photo || !employeeLocation}
+                          className="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-8 py-4 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {isTakingAttendance ? "Memproses..." : "↗ Kirim Absen Pulang"}
+                        </button>
+                      )}
+                    </div>
+
+                    {!photo && (
+                      <p className="mt-3 text-center text-[10px] font-semibold text-slate-400">
+                        Foto dan GPS wajib tersedia sebelum tombol absensi aktif.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ===================================================
+            QUICK LINK
+        =================================================== */}
+        <Link
+          href="/my-attendance"
+          className="group flex items-center justify-between overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4 transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-500/10 sm:px-6"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg shadow-sm">📅</div>
+            <div>
+              <p className="text-sm font-black text-slate-900">Riwayat Absensi</p>
+              <p className="text-[11px] text-slate-400">Lihat seluruh rekam kehadiran kamu</p>
+            </div>
+          </div>
+          <span className="text-lg font-black text-blue-600 transition-transform group-hover:translate-x-1">→</span>
+        </Link>
+
+        {/* ===================================================
+            STATISTIK
+        =================================================== */}
+        <section>
+          <div className="mb-4 flex items-end justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Performance</p>
+              <h2 className="mt-1 text-xl font-black tracking-tight text-slate-900">Ringkasan Kehadiran</h2>
+            </div>
+            <span className="hidden text-[10px] font-bold text-slate-400 sm:block">30 aktivitas terakhir</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+            <StatCard label="Total Masuk" value={myTotalMasuk} caption="Hari" tone="blue" icon="↗" />
+            <StatCard label="Tepat Waktu" value={myPresentCount} caption="Hari" tone="green" icon="✓" />
+            <StatCard label="Terlambat" value={myLateCount} caption="Hari" tone="orange" icon="◷" />
+            <StatCard label="Sakit / Izin" value={mySickCount + myLeaveCount} caption="Hari" tone="purple" icon="✦" />
+          </div>
+        </section>
+
+        {/* ===================================================
+            DETAIL + CHART
+        =================================================== */}
+        <section className="grid gap-5 lg:grid-cols-[0.8fr_1.7fr]">
+          <div className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)] sm:p-7">
+            <div className="mb-6">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Attendance rate</p>
+              <h3 className="mt-1 text-lg font-black text-slate-900">Detail Statistik</h3>
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex items-center justify-between rounded-2xl bg-emerald-50/70 p-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">✓</span>
+                  <div>
+                    <p className="text-xs font-black text-slate-800">Tepat Waktu</p>
+                    <p className="text-[10px] text-slate-400">Sebelum pukul 09:00</p>
                   </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+                </div>
+                <p className="text-2xl font-black text-emerald-600">{myPresentCount}</p>
+              </div>
 
-        {/* ===================================================
-            LINK RIWAYAT
-        =================================================== */}
+              <div className="flex items-center justify-between rounded-2xl bg-amber-50/70 p-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm">◷</span>
+                  <div>
+                    <p className="text-xs font-black text-slate-800">Terlambat</p>
+                    <p className="text-[10px] text-slate-400">Pukul 09:00 atau setelahnya</p>
+                  </div>
+                </div>
+                <p className="text-2xl font-black text-amber-600">{myLateCount}</p>
+              </div>
 
-        <div className="mb-2 flex justify-end">
-          <Link
-            href="/my-attendance"
-            className="inline-flex items-center gap-2 rounded-2xl border border-indigo-100 bg-indigo-50 px-6 py-3 text-sm font-bold text-indigo-600 shadow-sm transition-all hover:-translate-y-0.5 hover:bg-indigo-600 hover:text-white hover:shadow"
-          >
-            📅 Lihat Riwayat Lengkapku →
-          </Link>
-        </div>
+              <div className="flex items-center justify-between rounded-2xl bg-red-50/60 p-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-red-500 shadow-sm">!</span>
+                  <div>
+                    <p className="text-xs font-black text-slate-800">Alpa</p>
+                    <p className="text-[10px] text-slate-400">Tidak ada catatan kehadiran</p>
+                  </div>
+                </div>
+                <p className="text-2xl font-black text-red-500">{myAbsentCount}</p>
+              </div>
 
-        {/* ===================================================
-            STATISTIK UTAMA
-        =================================================== */}
-
-        <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-
-          {/* TOTAL MASUK */}
-
-          <div className="rounded-3xl border border-blue-100 bg-white p-5 shadow-sm">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-blue-500">
-              Total Masuk
-            </h3>
-
-            <p className="mt-2 text-3xl font-black text-blue-600">
-              {myTotalMasuk}
-
-              <span className="ml-1 text-xs font-medium text-gray-400">
-                Hari
-              </span>
-            </p>
-          </div>
-
-          {/* SAKIT */}
-
-          <div className="rounded-3xl border border-orange-100 bg-white p-5 shadow-sm">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-orange-500">
-              Sakit
-            </h3>
-
-            <p className="mt-2 text-3xl font-black text-orange-600">
-              {mySickCount}
-
-              <span className="ml-1 text-xs font-medium text-gray-400">
-                Hari
-              </span>
-            </p>
-          </div>
-
-          {/* IZIN */}
-
-          <div className="rounded-3xl border border-purple-100 bg-white p-5 shadow-sm">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-purple-500">
-              Izin
-            </h3>
-
-            <p className="mt-2 text-3xl font-black text-purple-600">
-              {myLeaveCount}
-
-              <span className="ml-1 text-xs font-medium text-gray-400">
-                Hari
-              </span>
-            </p>
-          </div>
-
-          {/* ALPA */}
-
-          <div className="rounded-3xl border border-red-100 bg-white p-5 shadow-sm">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-red-500">
-              Alpa
-            </h3>
-
-            <p className="mt-2 text-3xl font-black text-red-600">
-              {myAbsentCount}
-
-              <span className="ml-1 text-xs font-medium text-gray-400">
-                Hari
-              </span>
-            </p>
-          </div>
-        </div>
-
-        {/* ===================================================
-            DETAIL STATISTIK + GRAFIK
-        =================================================== */}
-
-        <div className="grid gap-6 md:grid-cols-3">
-
-          {/* =================================================
-              STATISTIK KIRI
-          ================================================= */}
-
-          <div className="flex flex-col gap-4 md:col-span-1">
-
-            {/* TEPAT WAKTU */}
-
-            <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-500">
-                Tepat Waktu
-              </h3>
-
-              <p className="mt-2 text-4xl font-extrabold text-green-600">
-                {myPresentCount}
-
-                <span className="ml-1 text-sm font-medium text-gray-400">
-                  Hari
-                </span>
-              </p>
-            </div>
-
-            {/* TERLAMBAT */}
-
-            <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm">
-              <h3 className="text-sm font-semibold text-gray-500">
-                Terlambat
-              </h3>
-
-              <p className="mt-2 text-4xl font-extrabold text-yellow-500">
-                {myLateCount}
-
-                <span className="ml-1 text-sm font-medium text-gray-400">
-                  Hari
-                </span>
-              </p>
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sakit</p>
+                  <p className="mt-1 text-xl font-black text-orange-500">{mySickCount}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Izin</p>
+                  <p className="mt-1 text-xl font-black text-violet-600">{myLeaveCount}</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* =================================================
-              GRAFIK
-          ================================================= */}
-
-          <div className="rounded-3xl border border-gray-100 bg-white p-6 shadow-sm md:col-span-2">
-
-            <h3 className="mb-1 text-lg font-bold text-gray-800">
-              Tren Waktu Kedatangan
-            </h3>
-
-            <p className="mb-6 text-xs text-gray-500">
-              Riwayat jam masuk kamu beberapa hari
-              terakhir (diluar sakit/izin).
-            </p>
+          <div className="min-w-0 rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)] sm:p-7">
+            <div className="mb-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Attendance analytics</p>
+                <h3 className="mt-1 text-lg font-black text-slate-900">Tren Waktu Kedatangan</h3>
+                <p className="mt-1 text-xs text-slate-400">Perubahan jam masuk dalam beberapa hari terakhir.</p>
+              </div>
+              <div className="w-fit rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-600">
+                {chartData.length} DATA
+              </div>
+            </div>
 
             {chartData.length > 0 ? (
-              <div className="h-64 w-full">
-
-                <ResponsiveContainer
-                  width="100%"
-                  height="100%"
-                >
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
                   <LineChart
                     data={chartData}
-                    margin={{
-                      top: 5,
-                      right: 10,
-                      left: -20,
-                      bottom: 5,
-                    }}
+                    margin={{ top: 10, right: 8, left: -18, bottom: 5 }}
                   >
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      vertical={false}
-                      stroke="#f3f4f6"
-                    />
-
+                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#eef2f7" />
                     <XAxis
                       dataKey="tanggal"
                       axisLine={false}
                       tickLine={false}
-                      tick={{
-                        fontSize: 12,
-                        fill: "#9ca3af",
-                      }}
+                      tick={{ fontSize: 11, fill: "#94a3b8" }}
                       dy={10}
                     />
-
                     <YAxis
-                      domain={[
-                        "dataMin - 1",
-                        "dataMax + 1",
-                      ]}
+                      domain={["dataMin - 1", "dataMax + 1"]}
                       axisLine={false}
                       tickLine={false}
-                      tick={{
-                        fontSize: 12,
-                        fill: "#9ca3af",
-                      }}
-                      tickFormatter={(
-                        val
-                      ) =>
-                        `${Math.floor(
-                          val
-                        )}:00`
-                      }
+                      tick={{ fontSize: 11, fill: "#94a3b8" }}
+                      tickFormatter={(val) => `${Math.floor(val)}:00`}
                     />
-
-                    <Tooltip
-                      content={
-                        <CustomTooltip />
-                      }
-                    />
-
+                    <Tooltip content={<CustomTooltip />} />
                     <Line
                       type="monotone"
                       dataKey="jamDesimal"
                       stroke="#2563eb"
-                      strokeWidth={4}
-                      dot={{
-                        r: 4,
-                        strokeWidth: 2,
-                        fill: "#fff",
-                        stroke:
-                          "#2563eb",
-                      }}
-                      activeDot={{
-                        r: 6,
-                        stroke:
-                          "#2563eb",
-                        strokeWidth: 2,
-                        fill: "#fff",
-                      }}
+                      strokeWidth={3}
+                      dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#2563eb" }}
+                      activeDot={{ r: 7, stroke: "#fff", strokeWidth: 3, fill: "#2563eb" }}
                     />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <div className="flex h-64 w-full items-center justify-center rounded-2xl border border-dashed border-gray-200 bg-gray-50">
-                <p className="text-sm text-gray-400">
-                  Belum ada riwayat absensi masuk
-                  untuk ditampilkan.
+              <div className="flex h-72 flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 text-center">
+                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl shadow-sm">📈</div>
+                <p className="text-sm font-black text-slate-700">Belum ada data grafik</p>
+                <p className="mt-1 max-w-xs text-xs leading-5 text-slate-400">
+                  Riwayat jam masuk akan muncul di sini setelah kamu melakukan absensi.
                 </p>
               </div>
             )}
           </div>
-        </div>
+        </section>
+
+        <footer className="pb-2 pt-2 text-center">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-300">
+            {companyName} • Employee Attendance System
+          </p>
+        </footer>
       </div>
     </main>
   );
