@@ -206,6 +206,11 @@ export default function DashboardPage() {
 
         // =====================================================
         // CEK HARI LIBUR
+        // FIX: tambahkan filter is_cancelled = false, karena
+        // pembatalan hari libur hanya meng-UPDATE row (bukan
+        // menghapusnya). Tanpa filter ini, hari libur yang
+        // sudah dibatalkan oleh owner tetap terbaca "libur"
+        // di sisi karyawan sehingga form absensi tetap terkunci.
         // =====================================================
 
         const { data: holidayData, error: holidayError } =
@@ -213,6 +218,7 @@ export default function DashboardPage() {
             .from("holidays")
             .select("description")
             .eq("date", todayStr)
+            .eq("is_cancelled", false)
             .maybeSingle();
 
         if (holidayError) {
@@ -225,6 +231,11 @@ export default function DashboardPage() {
         if (holidayData) {
           setIsTodayHoliday(true);
           setHolidayDesc(holidayData.description);
+        } else {
+          // pastikan reset ke false, jaga-jaga kalau ada
+          // reload/refetch dan sebelumnya sempat true
+          setIsTodayHoliday(false);
+          setHolidayDesc("");
         }
 
         // =====================================================

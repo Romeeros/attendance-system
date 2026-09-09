@@ -76,6 +76,24 @@ export default function OwnerDashboardPage() {
   const [isSettingHoliday, setIsSettingHoliday] =
     useState(false);
 
+  // ---------------------------------------------------------
+  // DAFTAR HARI LIBUR AKTIF (HARI INI & AKAN DATANG)
+  // ---------------------------------------------------------
+
+  const [holidays, setHolidays] = useState<any[]>([]);
+
+  // ---------------------------------------------------------
+  // PEMBATALAN HARI LIBUR
+  // ---------------------------------------------------------
+
+  const [cancellingId, setCancellingId] =
+    useState<string | null>(null);
+
+  const [cancelReason, setCancelReason] = useState("");
+
+  const [isCancellingHoliday, setIsCancellingHoliday] =
+    useState(false);
+
   // =========================================================
   // LOAD DASHBOARD
   // =========================================================
@@ -194,6 +212,33 @@ export default function OwnerDashboardPage() {
         const todayStr = new Date()
           .toISOString()
           .split("T")[0];
+
+        // =====================================================
+        // AMBIL HARI LIBUR AKTIF (HARI INI & AKAN DATANG)
+        // TIDAK TERMASUK YANG SUDAH DIBATALKAN
+        // =====================================================
+
+        const {
+          data: holidayList,
+          error: holidayListError,
+        } = await supabase
+          .from("holidays")
+          .select("*")
+          .eq("is_cancelled", false)
+          .gte("date", todayStr)
+          .order("date", {
+            ascending: true,
+          })
+          .limit(10);
+
+        if (holidayListError) {
+          console.error(
+            "Holiday List Error:",
+            holidayListError
+          );
+        }
+
+        setHolidays(holidayList || []);
 
         // =====================================================
         // AMBIL SEMUA PROFILE DALAM COMPANY
@@ -523,6 +568,99 @@ export default function OwnerDashboardPage() {
     }
 
     setIsSettingHoliday(false);
+  };
+
+  // =========================================================
+  // BUKA FORM PEMBATALAN
+  // =========================================================
+
+  const openCancelForm = (holidayId: string) => {
+    setCancellingId(holidayId);
+    setCancelReason("");
+  };
+
+  // =========================================================
+  // TUTUP FORM PEMBATALAN
+  // =========================================================
+
+  const closeCancelForm = () => {
+    setCancellingId(null);
+    setCancelReason("");
+  };
+
+  // =========================================================
+  // BATALKAN HARI LIBUR
+  // ALASAN WAJIB DIISI. SETELAH DIBATALKAN, TANGGAL TERSEBUT
+  // TIDAK LAGI DIANGGAP LIBUR SEHINGGA KARYAWAN & ADMIN
+  // BISA ABSEN KEMBALI.
+  // =========================================================
+
+  const handleCancelHoliday = async (
+    holidayId: string
+  ) => {
+    if (!cancelReason.trim()) {
+      alert(
+        "Alasan pembatalan wajib diisi!"
+      );
+
+      return;
+    }
+
+    setIsCancellingHoliday(true);
+
+    try {
+      const { error } =
+        await supabase
+          .from("holidays")
+          .update({
+            is_cancelled: true,
+            cancel_reason:
+              cancelReason.trim(),
+            cancelled_at:
+              new Date().toISOString(),
+            cancelled_by: userId,
+          })
+          .eq("id", holidayId);
+
+      if (error) {
+        throw error;
+      }
+
+      alert(
+        "✅ Hari libur dibatalkan. Karyawan & admin sudah bisa absen kembali pada tanggal tersebut."
+      );
+
+      closeCancelForm();
+
+      window.location.reload();
+    } catch (error: any) {
+      console.error(error);
+
+      alert(
+        `❌ Gagal membatalkan: ${error.message}`
+      );
+    }
+
+    setIsCancellingHoliday(false);
+  };
+
+  // =========================================================
+  // FORMAT TANGGAL HARI LIBUR
+  // =========================================================
+
+  const formatHolidayDate = (dateStr: string) => {
+    try {
+      return new Date(
+        `${dateStr}T00:00:00`
+      ).toLocaleDateString("id-ID", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
   };
 
   // =========================================================
@@ -1199,6 +1337,142 @@ export default function OwnerDashboardPage() {
                 </button>
 
               </div>
+
+              {/* =================================================
+                  DAFTAR HARI LIBUR AKTIF + BATALKAN
+              ================================================= */}
+
+              {holidays.length > 0 && (
+
+                <div className="mt-6 space-y-3 border-t border-gray-100 pt-6">
+
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Hari Libur Aktif
+                  </p>
+
+                  {holidays.map(
+                    (holiday) => {
+
+                      const isThisOneCancelling =
+                        cancellingId ===
+                        holiday.id;
+
+                      return (
+                        <div
+                          key={
+                            holiday.id
+                          }
+                          className={`rounded-2xl border p-4 transition ${
+                            isThisOneCancelling
+                              ? "border-red-200 bg-red-50/50"
+                              : "border-gray-100 bg-gray-50"
+                          }`}
+                        >
+
+                          <div className="flex items-start justify-between gap-3">
+
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-gray-800">
+                                {formatHolidayDate(
+                                  holiday.date
+                                )}
+                              </p>
+
+                              <p className="mt-0.5 text-xs text-gray-500">
+                                {
+                                  holiday.description
+                                }
+                              </p>
+                            </div>
+
+                            {!isThisOneCancelling && (
+                              <button
+                                onClick={() =>
+                                  openCancelForm(
+                                    holiday.id
+                                  )
+                                }
+                                className="shrink-0 rounded-lg border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600 transition hover:bg-red-100"
+                              >
+                                Batalkan
+                              </button>
+                            )}
+                          </div>
+
+                          {/* FORM ALASAN PEMBATALAN */}
+
+                          {isThisOneCancelling && (
+
+                            <div className="mt-3 space-y-2 border-t border-red-100 pt-3">
+
+                              <label className="block text-xs font-bold text-gray-600">
+                                Alasan pembatalan
+                                (wajib diisi)
+                              </label>
+
+                              <textarea
+                                value={
+                                  cancelReason
+                                }
+                                onChange={(e) =>
+                                  setCancelReason(
+                                    e.target
+                                      .value
+                                  )
+                                }
+                                rows={3}
+                                placeholder="Contoh: Operasional tetap berjalan karena ada kebutuhan mendadak dari klien"
+                                className="w-full rounded-xl border border-gray-200 p-3 text-sm focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"
+                              />
+
+                              <p className="text-[11px] text-gray-400">
+                                Setelah dibatalkan,
+                                karyawan dan admin
+                                bisa absen kembali
+                                pada tanggal ini.
+                              </p>
+
+                              <div className="flex gap-2 pt-1">
+
+                                <button
+                                  onClick={() =>
+                                    handleCancelHoliday(
+                                      holiday.id
+                                    )
+                                  }
+                                  disabled={
+                                    isCancellingHoliday ||
+                                    !cancelReason.trim()
+                                  }
+                                  className="flex-1 rounded-xl bg-red-600 py-2.5 text-xs font-bold text-white transition hover:bg-red-700 disabled:opacity-50"
+                                >
+                                  {isCancellingHoliday
+                                    ? "Memproses..."
+                                    : "Konfirmasi Pembatalan"}
+                                </button>
+
+                                <button
+                                  onClick={
+                                    closeCancelForm
+                                  }
+                                  disabled={
+                                    isCancellingHoliday
+                                  }
+                                  className="rounded-xl border border-gray-200 px-4 py-2.5 text-xs font-bold text-gray-600 transition hover:bg-gray-100"
+                                >
+                                  Tutup
+                                </button>
+
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                  )}
+
+                </div>
+              )}
             </div>
 
             {/* =================================================
