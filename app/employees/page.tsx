@@ -913,7 +913,7 @@ function Empty() {
       </p>
 
       <p className="mt-1 text-xs text-slate-400">
-        Tambahkan karyawan menggunakan tombol di atas.
+        Tambahkan karyawan menggunakan tombol di atas..
       </p>
     </div>
   );
