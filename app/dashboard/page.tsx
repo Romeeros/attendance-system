@@ -42,6 +42,17 @@ export default function DashboardPage() {
   const [todayStatus, setTodayStatus] = useState<string | null>(null);
 
   // =========================================================
+  // STATE LAPORAN PEKERJAAN (TASK LIST) SAAT ABSEN PULANG
+  // =========================================================
+
+  const [dailyTasks, setDailyTasks] = useState<string[]>([""]);
+  const taskInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Menyimpan task_list milik absensi HARI INI (untuk ditampilkan
+  // kembali setelah karyawan selesai absen pulang)
+  const [todayTaskList, setTodayTaskList] = useState<string[]>([]);
+
+  // =========================================================
   // STATE FOTO & KAMERA
   // =========================================================
 
@@ -282,10 +293,22 @@ export default function DashboardPage() {
           setTodayStatus(
             myTodayAttendance.status
           );
+
+          // ---------------------------------------------------
+          // TASK LIST HARI INI (jika sudah pernah absen pulang)
+          // ---------------------------------------------------
+
+          setTodayTaskList(
+            Array.isArray(myTodayAttendance.task_list)
+              ? myTodayAttendance.task_list
+              : []
+          );
         }
 
         // =====================================================
         // AMBIL RIWAYAT ABSENSI KARYAWAN
+        // FIX: tambahkan kolom task_count agar bisa dipakai
+        // untuk grafik tren produktivitas harian.
         // =====================================================
 
         const {
@@ -294,7 +317,7 @@ export default function DashboardPage() {
         } = await supabase
           .from("attendance")
           .select(
-            "created_at, status, check_in"
+            "created_at, status, check_in, task_count"
           )
           .eq("profile_id", user.id)
           .order("created_at", {
@@ -495,6 +518,78 @@ export default function DashboardPage() {
   };
 
   // =========================================================
+  // HANDLER LAPORAN PEKERJAAN (TASK LIST)
+  // =========================================================
+
+  const handleTaskChange = (index: number, value: string) => {
+    const updated = [...dailyTasks];
+    updated[index] = value;
+    setDailyTasks(updated);
+  };
+
+  const handleTaskKeyDown = (
+    index: number,
+    e: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    // Tekan ENTER -> tambah baris baru & fokus ke baris baru
+    if (e.key === "Enter") {
+      e.preventDefault();
+
+      if (!dailyTasks[index].trim()) {
+        return;
+      }
+
+      const updated = [...dailyTasks];
+      updated.splice(index + 1, 0, "");
+      setDailyTasks(updated);
+
+      setTimeout(() => {
+        taskInputRefs.current[index + 1]?.focus();
+      }, 0);
+
+      return;
+    }
+
+    // Tekan BACKSPACE di baris kosong -> hapus baris & fokus naik
+    if (
+      e.key === "Backspace" &&
+      dailyTasks[index] === "" &&
+      dailyTasks.length > 1
+    ) {
+      e.preventDefault();
+
+      const updated = [...dailyTasks];
+      updated.splice(index, 1);
+      setDailyTasks(updated);
+
+      setTimeout(() => {
+        taskInputRefs.current[index - 1]?.focus();
+      }, 0);
+    }
+  };
+
+  const handleAddTaskRow = () => {
+    setDailyTasks((prev) => [...prev, ""]);
+
+    setTimeout(() => {
+      taskInputRefs.current[dailyTasks.length]?.focus();
+    }, 0);
+  };
+
+  const handleRemoveTaskRow = (index: number) => {
+    if (dailyTasks.length === 1) {
+      setDailyTasks([""]);
+      return;
+    }
+
+    setDailyTasks((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const filledTaskCount = dailyTasks.filter(
+    (t) => t.trim().length > 0
+  ).length;
+
+  // =========================================================
   // SUBMIT ABSENSI
   // =========================================================
 
@@ -692,6 +787,25 @@ export default function DashboardPage() {
       }
 
       // -----------------------------------------------------
+      // VALIDASI LAPORAN PEKERJAAN
+      // Buang baris kosong, wajib minimal 1 pekerjaan terisi
+      // -----------------------------------------------------
+
+      const filteredTasks = dailyTasks
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+
+      if (filteredTasks.length === 0) {
+        alert(
+          "Mohon isi minimal 1 pekerjaan yang telah kamu kerjakan hari ini sebelum absen pulang!"
+        );
+
+        setIsTakingAttendance(false);
+
+        return;
+      }
+
+      // -----------------------------------------------------
       // UPLOAD FOTO CHECK OUT
       // -----------------------------------------------------
 
@@ -728,6 +842,8 @@ export default function DashboardPage() {
 
       // -----------------------------------------------------
       // UPDATE ABSENSI
+      // FIX: sertakan task_list & task_count dari laporan
+      // pekerjaan yang diisi karyawan.
       // -----------------------------------------------------
 
       const { error } =
@@ -741,6 +857,8 @@ export default function DashboardPage() {
               employeeLocation.lat,
             longitude_out:
               employeeLocation.lng,
+            task_list: filteredTasks,
+            task_count: filteredTasks.length,
           })
           .eq(
             "id",
@@ -822,7 +940,7 @@ export default function DashboardPage() {
     myLateCount;
 
   // =========================================================
-  // DATA GRAFIK
+  // DATA GRAFIK JAM MASUK
   // =========================================================
 
   const chartData =
@@ -879,7 +997,31 @@ export default function DashboardPage() {
       .reverse();
 
   // =========================================================
-  // CUSTOM TOOLTIP GRAFIK
+  // DATA GRAFIK PRODUKTIVITAS HARIAN (JUMLAH TASK)
+  // =========================================================
+
+  const productivityData = myAttendanceHistory
+    .filter(
+      (item) =>
+        item.check_in &&
+        typeof item.task_count === "number" &&
+        item.task_count > 0
+    )
+    .map((item) => {
+      const dateObj = new Date(item.check_in);
+
+      return {
+        tanggal: dateObj.toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "short",
+        }),
+        jumlahTugas: item.task_count,
+      };
+    })
+    .reverse();
+
+  // =========================================================
+  // CUSTOM TOOLTIP GRAFIK JAM MASUK
   // =========================================================
 
   const CustomTooltip = ({
@@ -912,6 +1054,29 @@ export default function DashboardPage() {
               payload[0].payload
                 .status
             }
+          </p>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  // =========================================================
+  // CUSTOM TOOLTIP GRAFIK PRODUKTIVITAS
+  // =========================================================
+
+  const ProductivityTooltip = ({
+    active,
+    payload,
+    label,
+  }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-lg">
+          <p className="font-bold text-gray-800">{label}</p>
+          <p className="text-sm font-semibold text-emerald-600">
+            {payload[0].payload.jumlahTugas} pekerjaan
           </p>
         </div>
       );
@@ -1182,6 +1347,33 @@ export default function DashboardPage() {
                       : "Terima kasih sudah menyelesaikan absensi. Semoga harimu berjalan dengan lancar!"}
                   </p>
                 </div>
+
+                {/* -----------------------------------------------
+                    LAPORAN PEKERJAAN HARI INI (READ ONLY)
+                    Hanya tampil untuk status present/late yang
+                    sudah punya task_list tersimpan.
+                ----------------------------------------------- */}
+                {(todayStatus === "present" || todayStatus === "late") &&
+                  todayTaskList.length > 0 && (
+                    <div className="mx-auto mt-6 max-w-lg rounded-[22px] border border-white/70 bg-white/70 p-5 text-left backdrop-blur-sm">
+                      <p className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                        Laporan pekerjaan hari ini ({todayTaskList.length})
+                      </p>
+                      <ol className="space-y-2">
+                        {todayTaskList.map((task, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start gap-2 text-sm text-slate-700"
+                          >
+                            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700">
+                              {i + 1}
+                            </span>
+                            <span>{task}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
               </div>
             ) : (
               <div>
@@ -1323,6 +1515,70 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
+                    {/* -----------------------------------------------
+                        LAPORAN PEKERJAAN (TASK LIST)
+                        Hanya muncul saat karyawan akan ABSEN PULANG,
+                        bukan saat absen masuk.
+                    ----------------------------------------------- */}
+                    {hasCheckedIn && !hasCheckedOut && (
+                      <div className="mx-auto mt-6 w-full max-w-md rounded-[26px] border border-slate-200 bg-slate-50/80 p-5 sm:p-6">
+                        <div className="mb-4 flex items-start gap-3">
+                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm">
+                            📝
+                          </div>
+                          <div>
+                            <h3 className="font-black text-slate-900">Laporan Pekerjaan Hari Ini</h3>
+                            <p className="mt-1 text-xs leading-5 text-slate-400">
+                              Tulis pekerjaan yang sudah kamu selesaikan. Tekan{" "}
+                              <span className="font-bold text-slate-500">Enter</span> untuk menambah baris baru.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          {dailyTasks.map((task, index) => (
+                            <div key={index} className="flex items-center gap-2">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xs font-black text-blue-600">
+                                {index + 1}
+                              </span>
+                              <input
+                                ref={(el) => {
+                                  taskInputRefs.current[index] = el;
+                                }}
+                                type="text"
+                                value={task}
+                                onChange={(e) => handleTaskChange(index, e.target.value)}
+                                onKeyDown={(e) => handleTaskKeyDown(index, e)}
+                                placeholder={`Pekerjaan ke-${index + 1}...`}
+                                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                              />
+                              {dailyTasks.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveTaskRow(index)}
+                                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-300 transition hover:bg-red-50 hover:text-red-500"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleAddTaskRow}
+                          className="mt-3 flex items-center gap-1.5 text-xs font-black text-blue-600 transition hover:text-blue-700"
+                        >
+                          + Tambah Pekerjaan
+                        </button>
+
+                        <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          Total: {filledTaskCount} pekerjaan tercatat
+                        </p>
+                      </div>
+                    )}
+
                     <div className="mx-auto mt-6 flex max-w-md flex-col gap-3">
                       {!hasCheckedIn && (
                         <button
@@ -1337,7 +1593,12 @@ export default function DashboardPage() {
                       {hasCheckedIn && !hasCheckedOut && (
                         <button
                           onClick={() => submitAttendance("check_out")}
-                          disabled={isTakingAttendance || !photo || !employeeLocation}
+                          disabled={
+                            isTakingAttendance ||
+                            !photo ||
+                            !employeeLocation ||
+                            filledTaskCount === 0
+                          }
                           className="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-8 py-4 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {isTakingAttendance ? "Memproses..." : "↗ Kirim Absen Pulang"}
@@ -1348,6 +1609,12 @@ export default function DashboardPage() {
                     {!photo && (
                       <p className="mt-3 text-center text-[10px] font-semibold text-slate-400">
                         Foto dan GPS wajib tersedia sebelum tombol absensi aktif.
+                      </p>
+                    )}
+
+                    {hasCheckedIn && !hasCheckedOut && photo && filledTaskCount === 0 && (
+                      <p className="mt-2 text-center text-[10px] font-semibold text-amber-500">
+                        Isi minimal 1 laporan pekerjaan sebelum absen pulang.
                       </p>
                     )}
                   </>
@@ -1507,6 +1774,67 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+        </section>
+
+        {/* ===================================================
+            GRAFIK PRODUKTIVITAS HARIAN (JUMLAH TASK)
+        =================================================== */}
+        <section className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)] sm:p-7">
+          <div className="mb-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-600">Productivity analytics</p>
+              <h3 className="mt-1 text-lg font-black text-slate-900">Tren Produktivitas Harian</h3>
+              <p className="mt-1 text-xs text-slate-400">
+                Jumlah pekerjaan yang kamu laporkan setiap kali absen pulang.
+              </p>
+            </div>
+            <div className="w-fit rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-600">
+              {productivityData.length} DATA
+            </div>
+          </div>
+
+          {productivityData.length > 0 ? (
+            <div className="h-72 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart
+                  data={productivityData}
+                  margin={{ top: 10, right: 8, left: -18, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#eef2f7" />
+                  <XAxis
+                    dataKey="tanggal"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: "#94a3b8" }}
+                    dy={10}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: "#94a3b8" }}
+                  />
+                  <Tooltip content={<ProductivityTooltip />} />
+                  <Line
+                    type="monotone"
+                    dataKey="jumlahTugas"
+                    stroke="#16a34a"
+                    strokeWidth={3}
+                    dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#16a34a" }}
+                    activeDot={{ r: 7, stroke: "#fff", strokeWidth: 3, fill: "#16a34a" }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex h-72 flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 text-center">
+              <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl shadow-sm">📊</div>
+              <p className="text-sm font-black text-slate-700">Belum ada data produktivitas</p>
+              <p className="mt-1 max-w-xs text-xs leading-5 text-slate-400">
+                Grafik akan muncul setelah kamu melaporkan pekerjaan saat absen pulang.
+              </p>
+            </div>
+          )}
         </section>
 
         <footer className="pb-2 pt-2 text-center">

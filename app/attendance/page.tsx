@@ -20,6 +20,8 @@ interface Attendance {
   longitude: number | null;
   latitude_out: number | null;
   longitude_out: number | null;
+  task_list: string[] | null;
+  task_count: number | null;
   profiles: {
     full_name: string;
     division: string;
@@ -80,6 +82,7 @@ export default function AttendancePage() {
   const [userId, setUserId] = useState("");
   const [attendances, setAttendances] = useState<Attendance[]>([]);
   const [printDate, setPrintDate] = useState<string | null>(null);
+  const [selectedReport, setSelectedReport] = useState<Attendance | null>(null);
 
   /* =========================
      LOAD DATA
@@ -164,7 +167,9 @@ export default function AttendancePage() {
             latitude,
             longitude,
             latitude_out,
-            longitude_out
+            longitude_out,
+            task_list,
+            task_count
           `)
           .in("profile_id", employeeIds)
           .order("created_at", { ascending: false });
@@ -241,6 +246,70 @@ export default function AttendancePage() {
       console.error("Approval error:", error);
       alert("Terjadi kesalahan saat memproses data.");
     }
+  };
+
+  /* =========================
+     LAPORAN PEKERJAAN
+  ========================= */
+
+  const handleDownloadReport = (item: Attendance) => {
+    const tasks = (item.task_list || []).filter((task) => task?.trim());
+
+    const date = new Date(item.created_at).toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+
+    const content = [
+      "============================================================",
+      "                 LAPORAN PEKERJAAN HARIAN",
+      "============================================================",
+      "",
+      `Nama        : ${item.profiles?.full_name || "-"}`,
+      `Divisi      : ${item.profiles?.division || "-"}`,
+      `Tanggal     : ${date}`,
+      `Jam Masuk   : ${formatTime(item.check_in)}`,
+      `Jam Pulang  : ${formatTime(item.check_out)}`,
+      `Status      : ${statusText(item.status)}`,
+      "",
+      "------------------------------------------------------------",
+      "PEKERJAAN YANG DISELESAIKAN",
+      "------------------------------------------------------------",
+      "",
+      ...(tasks.length
+        ? tasks.map((task, index) => `[${String(index + 1).padStart(2, "0")}] ${task}`)
+        : ["Belum ada laporan pekerjaan."]),
+      "",
+      "------------------------------------------------------------",
+      "RINGKASAN",
+      "------------------------------------------------------------",
+      "",
+      `Total pekerjaan : ${tasks.length} pekerjaan`,
+      "",
+      "============================================================",
+      "          Company Attendance Management System",
+      "============================================================",
+    ].join("\n");
+
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    const safeName = (item.profiles?.full_name || "karyawan")
+      .replace(/[^a-zA-Z0-9-_]/g, "_")
+      .replace(/_+/g, "_");
+
+    link.href = url;
+    link.download = `Laporan_Pekerjaan_${safeName}_${new Date(
+      item.created_at
+    ).toISOString().slice(0, 10)}.txt`;
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   /* =========================
@@ -832,40 +901,47 @@ export default function AttendancePage() {
                                         {/* ACTION */}
                                         <td className="px-5 py-4 text-right print:hidden">
 
-                                          {item.approval_status ===
-                                          "pending" ? (
-                                            <div className="flex justify-end gap-1.5">
-
+                                          <div className="flex flex-col items-end gap-2">
+                                            {Array.isArray(item.task_list) &&
+                                              item.task_list.some(
+                                                (task) =>
+                                                  typeof task === "string" &&
+                                                  task.trim().length > 0
+                                              ) && (
                                               <button
-                                                onClick={() =>
-                                                  handleApproval(
-                                                    item.id,
-                                                    "approved"
-                                                  )
-                                                }
-                                                className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-[10px] font-black text-emerald-600 transition hover:bg-emerald-50"
+                                                onClick={() => setSelectedReport(item)}
+                                                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-600 transition hover:-translate-y-0.5 hover:bg-blue-600 hover:text-white"
                                               >
-                                                Approve
+                                                📋 Laporan
                                               </button>
+                                            )}
 
-                                              <button
-                                                onClick={() =>
-                                                  handleApproval(
-                                                    item.id,
-                                                    "rejected"
-                                                  )
-                                                }
-                                                className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-black text-rose-600 transition hover:bg-rose-50"
-                                              >
-                                                Reject
-                                              </button>
+                                            {item.approval_status === "pending" ? (
+                                              <div className="flex justify-end gap-1.5">
+                                                <button
+                                                  onClick={() =>
+                                                    handleApproval(item.id, "approved")
+                                                  }
+                                                  className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-[10px] font-black text-emerald-600 transition hover:bg-emerald-50"
+                                                >
+                                                  Approve
+                                                </button>
 
-                                            </div>
-                                          ) : (
-                                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-300">
-                                              Done
-                                            </span>
-                                          )}
+                                                <button
+                                                  onClick={() =>
+                                                    handleApproval(item.id, "rejected")
+                                                  }
+                                                  className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-black text-rose-600 transition hover:bg-rose-50"
+                                                >
+                                                  Reject
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <span className="text-[9px] font-black uppercase tracking-wider text-slate-300">
+                                                Done
+                                              </span>
+                                            )}
+                                          </div>
 
                                         </td>
 
@@ -890,6 +966,126 @@ export default function AttendancePage() {
           </div>
         )}
       </div>
+
+      {/* ================= LAPORAN MODAL ================= */}
+      {selectedReport && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setSelectedReport(null);
+          }}
+        >
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 text-white">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-xl">
+                  📋
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-100">
+                    Daily Work Report
+                  </p>
+                  <h3 className="text-lg font-black">
+                    {selectedReport.profiles?.full_name || "Karyawan"}
+                  </h3>
+                  <p className="text-xs font-medium text-blue-100">
+                    {selectedReport.profiles?.division || "Tanpa Divisi"}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedReport(null)}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-lg transition hover:bg-white/20"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="max-h-[58vh] overflow-y-auto p-6">
+              <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    Tanggal
+                  </p>
+                  <p className="mt-1 text-sm font-black text-slate-800">
+                    {new Date(selectedReport.created_at).toLocaleDateString(
+                      "id-ID",
+                      { day: "numeric", month: "short", year: "numeric" }
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    Jam Kerja
+                  </p>
+                  <p className="mt-1 text-sm font-black text-slate-800">
+                    {formatTime(selectedReport.check_in)} —{" "}
+                    {formatTime(selectedReport.check_out)}
+                  </p>
+                </div>
+                <div className="col-span-2 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:col-span-1">
+                  <p className="text-[9px] font-black uppercase tracking-wider text-blue-400">
+                    Total Pekerjaan
+                  </p>
+                  <p className="mt-1 text-xl font-black text-blue-600">
+                    {(selectedReport.task_list || []).length}
+                    <span className="ml-1 text-xs">tugas</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-slate-200">
+                <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+                  <h4 className="text-sm font-black text-slate-800">
+                    Pekerjaan yang diselesaikan
+                  </h4>
+                  <p className="mt-0.5 text-xs font-medium text-slate-400">
+                    Daftar pekerjaan yang dilaporkan saat absen pulang.
+                  </p>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {(selectedReport.task_list || []).length > 0 ? (
+                    selectedReport.task_list!.map((task, index) => (
+                      <div
+                        key={`${selectedReport.id}-${index}`}
+                        className="flex gap-4 px-5 py-4 transition hover:bg-slate-50"
+                      >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[10px] font-black text-blue-600">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <p className="pt-1 text-sm font-medium leading-6 text-slate-700">
+                          {task}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-5 py-10 text-center text-sm text-slate-400">
+                      Belum ada pekerjaan yang dilaporkan.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setSelectedReport(null)}
+                className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-xs font-black text-slate-600 transition hover:bg-slate-100"
+              >
+                Tutup
+              </button>
+              <button
+                onClick={() => handleDownloadReport(selectedReport)}
+                className="rounded-xl bg-slate-900 px-5 py-3 text-xs font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5 hover:bg-blue-600"
+              >
+                💾 Simpan ke Notepad (.TXT)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================= PRINT STYLE ================= */}
       <style jsx global>{`
