@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState("");
   const [companyName, setCompanyName] = useState("Company Attendance");
   const [userId, setUserId] = useState("");
+  const [profileCreatedAt, setProfileCreatedAt] = useState<string | null>(null);
 
   // =========================================================
   // STATE ABSENSI KARYAWAN
@@ -78,6 +79,7 @@ export default function DashboardPage() {
 
   const [isTodayHoliday, setIsTodayHoliday] = useState(false);
   const [holidayDesc, setHolidayDesc] = useState("");
+  const [monthlyHolidays, setMonthlyHolidays] = useState<string[]>([]);
 
   // =========================================================
   // STATE SAKIT / IZIN
@@ -180,6 +182,10 @@ export default function DashboardPage() {
             "Employee"
         );
 
+        // Tanggal profile/user dibuat.
+        // Dipakai sebagai batas awal perhitungan ALPA.
+        setProfileCreatedAt(profile.created_at ?? null);
+
         // -----------------------------------------------------
         // AMBIL NAMA PERUSAHAAN
         // -----------------------------------------------------
@@ -211,9 +217,16 @@ export default function DashboardPage() {
         // TANGGAL HARI INI
         // =====================================================
 
-        const todayStr = new Date()
-          .toISOString()
-          .split("T")[0];
+        // =====================================================
+        // TANGGAL HARI INI (LOCAL TIME)
+        // =====================================================
+        const today = new Date();
+
+        const todayStr = `${today.getFullYear()}-${String(
+          today.getMonth() + 1
+        ).padStart(2, "0")}-${String(
+          today.getDate()
+        ).padStart(2, "0")}`;
 
         // =====================================================
         // CEK HARI LIBUR
@@ -306,10 +319,29 @@ export default function DashboardPage() {
         }
 
         // =====================================================
-        // AMBIL RIWAYAT ABSENSI KARYAWAN
-        // FIX: tambahkan kolom task_count agar bisa dipakai
-        // untuk grafik tren produktivitas harian.
+        // AMBIL RIWAYAT ABSENSI BULAN BERJALAN
+        // Statistik dashboard hanya menghitung bulan ini.
         // =====================================================
+
+        const monthStart = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          1,
+          0,
+          0,
+          0,
+          0
+        );
+
+        const tomorrow = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate() + 1,
+          0,
+          0,
+          0,
+          0
+        );
 
         const {
           data: myHistory,
@@ -320,10 +352,11 @@ export default function DashboardPage() {
             "created_at, status, check_in, task_count"
           )
           .eq("profile_id", user.id)
+          .gte("created_at", monthStart.toISOString())
+          .lt("created_at", tomorrow.toISOString())
           .order("created_at", {
             ascending: false,
-          })
-          .limit(30);
+          });
 
         if (historyError) {
           console.error(
@@ -334,6 +367,50 @@ export default function DashboardPage() {
 
         setMyAttendanceHistory(
           myHistory ?? []
+        );
+
+        // =====================================================
+        // AMBIL HARI LIBUR BULAN BERJALAN
+        // Hari libur tidak dihitung sebagai ALPA.
+        // =====================================================
+
+        const monthStartDate = `${today.getFullYear()}-${String(
+          today.getMonth() + 1
+        ).padStart(2, "0")}-01`;
+
+        const lastDayOfMonth = new Date(
+          today.getFullYear(),
+          today.getMonth() + 1,
+          0
+        ).getDate();
+
+        const monthEndDate = `${today.getFullYear()}-${String(
+          today.getMonth() + 1
+        ).padStart(2, "0")}-${String(
+          lastDayOfMonth
+        ).padStart(2, "0")}`;
+
+        const {
+          data: monthlyHolidayData,
+          error: monthlyHolidayError,
+        } = await supabase
+          .from("holidays")
+          .select("date")
+          .gte("date", monthStartDate)
+          .lte("date", monthEndDate)
+          .eq("is_cancelled", false);
+
+        if (monthlyHolidayError) {
+          console.error(
+            "Monthly Holiday Error:",
+            monthlyHolidayError
+          );
+        }
+
+        setMonthlyHolidays(
+          (monthlyHolidayData ?? []).map(
+            (holiday) => holiday.date
+          )
         );
       } catch (error) {
         console.error(
@@ -892,48 +969,144 @@ export default function DashboardPage() {
   };
 
   // =========================================================
-  // STATISTIK KARYAWAN
+  // STATISTIK BULAN BERJALAN
   // =========================================================
 
   let myPresentCount = 0;
   let myLateCount = 0;
   let mySickCount = 0;
   let myLeaveCount = 0;
+
+  // Hitung status yang benar-benar tercatat di database.
+  myAttendanceHistory.forEach((att) => {
+    if (att.status === "present") {
+      myPresentCount++;
+    }
+
+    if (att.status === "late") {
+      myLateCount++;
+    }
+
+    if (att.status === "sakit") {
+      mySickCount++;
+    }
+
+    if (att.status === "izin") {
+      myLeaveCount++;
+    }
+  });
+
+  // =========================================================
+  // HITUNG ALPA OTOMATIS
+  //
+  // Alpa = hari kerja yang:
+  // 1. Sudah lewat
+  // 2. Sudah termasuk masa user aktif/dibuat
+  // 3. Bukan Sabtu/Minggu
+  // 4. Bukan hari libur
+  // 5. Tidak mempunyai record attendance
+  //
+  // Hari ini TIDAK langsung dihitung Alpa agar karyawan masih
+  // mempunyai kesempatan untuk melakukan absensi hari ini.
+  // =========================================================
+
+  const attendanceDateSet = new Set(
+    myAttendanceHistory
+      .map((att) => {
+        if (!att.created_at) {
+          return null;
+        }
+
+        const date = new Date(att.created_at);
+
+        return `${date.getFullYear()}-${String(
+          date.getMonth() + 1
+        ).padStart(2, "0")}-${String(
+          date.getDate()
+        ).padStart(2, "0")}`;
+      })
+      .filter(Boolean)
+  );
+
+  const nowForStats = new Date();
+
+  const currentMonthStart = new Date(
+    nowForStats.getFullYear(),
+    nowForStats.getMonth(),
+    1,
+    0,
+    0,
+    0,
+    0
+  );
+
+  const userCreatedDate = profileCreatedAt
+    ? new Date(profileCreatedAt)
+    : currentMonthStart;
+
+  const userCreatedDay = new Date(
+    userCreatedDate.getFullYear(),
+    userCreatedDate.getMonth(),
+    userCreatedDate.getDate(),
+    0,
+    0,
+    0,
+    0
+  );
+
+  // Jika user dibuat sebelum bulan berjalan, mulai dari tanggal 1.
+  // Jika user dibuat di bulan berjalan, mulai dari tanggal user dibuat.
+  const absenceStartDate =
+    userCreatedDay > currentMonthStart
+      ? userCreatedDay
+      : currentMonthStart;
+
+  // Kemarin adalah tanggal terakhir yang boleh dihitung Alpa.
+  const yesterday = new Date(
+    nowForStats.getFullYear(),
+    nowForStats.getMonth(),
+    nowForStats.getDate() - 1,
+    0,
+    0,
+    0,
+    0
+  );
+
   let myAbsentCount = 0;
 
-  myAttendanceHistory.forEach(
-    (att) => {
-      if (
-        att.status === "present"
-      ) {
-        myPresentCount++;
-      }
+  const checkDate = new Date(absenceStartDate);
 
-      if (
-        att.status === "late"
-      ) {
-        myLateCount++;
-      }
+  while (checkDate <= yesterday) {
+    const dayOfWeek = checkDate.getDay();
 
-      if (
-        att.status === "sakit"
-      ) {
-        mySickCount++;
-      }
+    const isWeekend =
+      dayOfWeek === 0 ||
+      dayOfWeek === 6;
 
-      if (
-        att.status === "izin"
-      ) {
-        myLeaveCount++;
-      }
+    const dateString = `${checkDate.getFullYear()}-${String(
+      checkDate.getMonth() + 1
+    ).padStart(2, "0")}-${String(
+      checkDate.getDate()
+    ).padStart(2, "0")}`;
 
-      if (
-        att.status === "absent"
-      ) {
-        myAbsentCount++;
-      }
+    const isHoliday =
+      monthlyHolidays.includes(dateString);
+
+    const hasAttendance =
+      attendanceDateSet.has(dateString);
+
+    if (
+      !isWeekend &&
+      !isHoliday &&
+      !hasAttendance
+    ) {
+      myAbsentCount++;
     }
-  );
+
+    checkDate.setDate(
+      checkDate.getDate() + 1
+    );
+  }
 
   const myTotalMasuk =
     myPresentCount +
@@ -1650,7 +1823,12 @@ export default function DashboardPage() {
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Performance</p>
               <h2 className="mt-1 text-xl font-black tracking-tight text-slate-900">Ringkasan Kehadiran</h2>
             </div>
-            <span className="hidden text-[10px] font-bold text-slate-400 sm:block">30 aktivitas terakhir</span>
+            <span className="hidden text-[10px] font-bold text-slate-400 sm:block">
+              {new Date().toLocaleDateString("id-ID", {
+                month: "long",
+                year: "numeric",
+              })}
+            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
@@ -1669,6 +1847,12 @@ export default function DashboardPage() {
             <div className="mb-6">
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Attendance rate</p>
               <h3 className="mt-1 text-lg font-black text-slate-900">Detail Statistik</h3>
+              <p className="mt-1 text-xs font-semibold text-blue-600">
+                {new Date().toLocaleDateString("id-ID", {
+                  month: "long",
+                  year: "numeric",
+                })}
+              </p>
             </div>
 
             <div className="space-y-4">
@@ -1699,7 +1883,7 @@ export default function DashboardPage() {
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-red-500 shadow-sm">!</span>
                   <div>
                     <p className="text-xs font-black text-slate-800">Alpa</p>
-                    <p className="text-[10px] text-slate-400">Tidak ada catatan kehadiran</p>
+                    <p className="text-[10px] text-slate-400">Hari kerja tanpa catatan kehadiran</p>
                   </div>
                 </div>
                 <p className="text-2xl font-black text-red-500">{myAbsentCount}</p>
