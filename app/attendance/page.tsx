@@ -13,15 +13,23 @@ interface Attendance {
   check_in: string | null;
   check_out: string | null;
   created_at: string;
+
   approval_status: string | null;
+  approved_by?: string | null;
+  approved_at?: string | null;
+  rejection_reason: string | null;
+
   photo_check_in: string | null;
   photo_check_out: string | null;
+
   latitude: number | null;
   longitude: number | null;
   latitude_out: number | null;
   longitude_out: number | null;
+
   task_list: string[] | null;
   task_count: number | null;
+
   profiles: {
     full_name: string;
     division: string;
@@ -29,10 +37,6 @@ interface Attendance {
 }
 
 type GroupedData = Record<string, Record<string, Attendance[]>>;
-
-/* =========================
-   HELPER
-========================= */
 
 const getDashboardPath = (role: string) => {
   if (role === "owner") return "/owner/dashboard";
@@ -69,28 +73,52 @@ const formatTime = (value: string | null): string => {
 const initial = (name: string | null | undefined): string =>
   name?.trim()?.charAt(0)?.toUpperCase() || "?";
 
-/* =========================
-   PAGE
-========================= */
+const formatDate = (value: string) => {
+  return new Date(value).toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+};
 
 export default function AttendancePage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
+
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState("");
   const [userId, setUserId] = useState("");
-  const [attendances, setAttendances] = useState<Attendance[]>([]);
-  const [printDate, setPrintDate] = useState<string | null>(null);
-  const [selectedReport, setSelectedReport] = useState<Attendance | null>(null);
 
-  /* =========================
-     LOAD DATA
-  ========================= */
+  const [attendances, setAttendances] = useState<Attendance[]>([]);
+
+  const [printDate, setPrintDate] = useState<string | null>(null);
+
+  const [selectedReport, setSelectedReport] =
+    useState<Attendance | null>(null);
+
+  // =========================================================
+  // REJECT MODAL
+  // =========================================================
+
+  const [rejectTarget, setRejectTarget] =
+    useState<Attendance | null>(null);
+
+  const [rejectionReason, setRejectionReason] = useState("");
+
+  const [approvalLoading, setApprovalLoading] =
+    useState(false);
+
+  // =========================================================
+  // LOAD DATA
+  // =========================================================
 
   useEffect(() => {
     const load = async () => {
       try {
+        setLoading(true);
+
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -103,19 +131,32 @@ export default function AttendancePage() {
         setUserEmail(user.email || "");
         setUserId(user.id);
 
-        /* PROFILE */
-        const { data: profile, error: profileError } = await supabase
+        // =====================================================
+        // PROFILE USER YANG LOGIN
+        // =====================================================
+
+        const {
+          data: profile,
+          error: profileError,
+        } = await supabase
           .from("profiles")
           .select("id, role, company_id")
           .eq("id", user.id)
           .single();
 
         if (profileError || !profile) {
-          console.error("Gagal mengambil profile:", profileError);
+          console.error(
+            "Gagal mengambil profile:",
+            profileError
+          );
+
           return;
         }
 
-        /* EMPLOYEE TIDAK BOLEH MASUK HALAMAN INI */
+        // =====================================================
+        // EMPLOYEE TIDAK BOLEH MASUK
+        // =====================================================
+
         if (profile.role === "employee") {
           router.replace("/dashboard");
           return;
@@ -123,11 +164,14 @@ export default function AttendancePage() {
 
         setUserRole(profile.role);
 
-        /* =========================
-           GET EMPLOYEES
-        ========================= */
+        // =====================================================
+        // GET EMPLOYEE DALAM COMPANY
+        // =====================================================
 
-        const { data: employees, error: employeeError } = await supabase
+        const {
+          data: employees,
+          error: employeeError,
+        } = await supabase
           .from("profiles")
           .select("id, full_name, division")
           .eq("company_id", profile.company_id);
@@ -137,21 +181,26 @@ export default function AttendancePage() {
             "Gagal mengambil karyawan:",
             employeeError.message
           );
+
           return;
         }
 
-        const employeeIds = employees?.map((employee) => employee.id) || [];
+        const employeeIds =
+          employees?.map((employee) => employee.id) || [];
 
         if (!employeeIds.length) {
           setAttendances([]);
           return;
         }
 
-        /* =========================
-           GET ATTENDANCE
-        ========================= */
+        // =====================================================
+        // GET ATTENDANCE
+        // =====================================================
 
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from("attendance")
           .select(`
             id,
@@ -162,6 +211,9 @@ export default function AttendancePage() {
             check_out,
             created_at,
             approval_status,
+            approved_by,
+            approved_at,
+            rejection_reason,
             photo_check_in,
             photo_check_out,
             latitude,
@@ -172,31 +224,54 @@ export default function AttendancePage() {
             task_count
           `)
           .in("profile_id", employeeIds)
-          .order("created_at", { ascending: false });
+          .order("created_at", {
+            ascending: false,
+          });
 
         if (error) {
-          console.error("Gagal mengambil absensi:", error.message);
+          console.error(
+            "Gagal mengambil absensi:",
+            error.message
+          );
+
           return;
         }
 
-        /* GABUNGKAN DENGAN DATA PROFILE */
-        const merged: Attendance[] = (data || []).map((item) => {
-          const employee = employees?.find(
-            (employee) => employee.id === item.profile_id
-          );
+        // =====================================================
+        // GABUNG DATA PROFILE
+        // =====================================================
 
-          return {
-            ...item,
-            profiles: {
-              full_name: employee?.full_name || "Unknown",
-              division: employee?.division?.trim() || "Tanpa Divisi",
-            },
-          };
-        });
+        const merged: Attendance[] = (data || []).map(
+          (item: any) => {
+            const employee = employees?.find(
+              (employee) =>
+                employee.id === item.profile_id
+            );
+
+            return {
+              ...item,
+
+              rejection_reason:
+                item.rejection_reason || null,
+
+              profiles: {
+                full_name:
+                  employee?.full_name || "Unknown",
+
+                division:
+                  employee?.division?.trim() ||
+                  "Tanpa Divisi",
+              },
+            };
+          }
+        );
 
         setAttendances(merged);
       } catch (error) {
-        console.error("Terjadi kesalahan:", error);
+        console.error(
+          "Terjadi kesalahan:",
+          error
+        );
       } finally {
         setLoading(false);
       }
@@ -205,82 +280,237 @@ export default function AttendancePage() {
     load();
   }, [router]);
 
-  /* =========================
-     APPROVAL
-  ========================= */
+  // =========================================================
+  // APPROVE
+  // =========================================================
 
-  const handleApproval = async (
-    id: string,
-    newStatus: "approved" | "rejected"
+  const handleApprove = async (
+    attendance: Attendance
   ) => {
-    const action =
-      newStatus === "approved" ? "APPROVE" : "REJECT";
+    if (approvalLoading) return;
 
-    if (!confirm(`Apakah Anda yakin ingin ${action} absensi ini?`)) {
-      return;
-    }
+    const confirmed = confirm(
+      `Apakah Anda yakin ingin menyetujui absensi ${attendance.profiles?.full_name}?`
+    );
+
+    if (!confirmed) return;
 
     try {
-      const { error } = await supabase
+      setApprovalLoading(true);
+
+      const {
+        error,
+      } = await supabase
         .from("attendance")
         .update({
-          approval_status: newStatus,
+          approval_status: "approved",
           approved_by: userId,
-          approved_at: new Date().toISOString(),
+          approved_at:
+            new Date().toISOString(),
+          rejection_reason: null,
         })
-        .eq("id", id);
+        .eq("id", attendance.id);
 
-      if (error) throw error;
+      if (error) {
+        throw error;
+      }
 
       setAttendances((prev) =>
         prev.map((item) =>
-          item.id === id
+          item.id === attendance.id
             ? {
                 ...item,
-                approval_status: newStatus,
+                approval_status: "approved",
+                approved_by: userId,
+                approved_at:
+                  new Date().toISOString(),
+                rejection_reason: null,
               }
             : item
         )
       );
-    } catch (error) {
-      console.error("Approval error:", error);
-      alert("Terjadi kesalahan saat memproses data.");
+
+      alert(
+        "✅ Absensi berhasil disetujui."
+      );
+    } catch (error: any) {
+      console.error(
+        "Approve error:",
+        error
+      );
+
+      alert(
+        error?.message ||
+          "Terjadi kesalahan saat menyetujui absensi."
+      );
+    } finally {
+      setApprovalLoading(false);
     }
   };
 
-  /* =========================
-     LAPORAN PEKERJAAN
-  ========================= */
+  // =========================================================
+  // OPEN REJECT MODAL
+  // =========================================================
 
-  const handleDownloadReport = (item: Attendance) => {
-    const tasks = (item.task_list || []).filter((task) => task?.trim());
+  const openRejectModal = (
+    attendance: Attendance
+  ) => {
+    if (approvalLoading) return;
 
-    const date = new Date(item.created_at).toLocaleDateString("id-ID", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
+    setRejectTarget(attendance);
+    setRejectionReason("");
+  };
+
+  // =========================================================
+  // CLOSE REJECT MODAL
+  // =========================================================
+
+  const closeRejectModal = () => {
+    if (approvalLoading) return;
+
+    setRejectTarget(null);
+    setRejectionReason("");
+  };
+
+  // =========================================================
+  // REJECT
+  // =========================================================
+
+  const handleReject = async () => {
+    if (!rejectTarget) return;
+
+    const reason = rejectionReason.trim();
+
+    if (!reason) {
+      alert(
+        "⚠️ Alasan penolakan wajib diisi."
+      );
+      return;
+    }
+
+    try {
+      setApprovalLoading(true);
+
+      const {
+        error,
+      } = await supabase
+        .from("attendance")
+        .update({
+          approval_status: "rejected",
+          approved_by: userId,
+          approved_at:
+            new Date().toISOString(),
+          rejection_reason: reason,
+        })
+        .eq("id", rejectTarget.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setAttendances((prev) =>
+        prev.map((item) =>
+          item.id === rejectTarget.id
+            ? {
+                ...item,
+                approval_status: "rejected",
+                approved_by: userId,
+                approved_at:
+                  new Date().toISOString(),
+                rejection_reason: reason,
+              }
+            : item
+        )
+      );
+
+      setRejectTarget(null);
+      setRejectionReason("");
+
+      alert(
+        "✅ Absensi berhasil ditolak dan alasan telah disimpan."
+      );
+    } catch (error: any) {
+      console.error(
+        "Reject error:",
+        error
+      );
+
+      alert(
+        error?.message ||
+          "Terjadi kesalahan saat menolak absensi."
+      );
+    } finally {
+      setApprovalLoading(false);
+    }
+  };
+
+  // =========================================================
+  // LAPORAN PEKERJAAN
+  // =========================================================
+
+  const handleDownloadReport = (
+    item: Attendance
+  ) => {
+    const tasks = (
+      item.task_list || []
+    ).filter(
+      (task) => task?.trim()
+    );
+
+    const date = new Date(
+      item.created_at
+    ).toLocaleDateString(
+      "id-ID",
+      {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }
+    );
 
     const content = [
       "============================================================",
       "                 LAPORAN PEKERJAAN HARIAN",
       "============================================================",
       "",
-      `Nama        : ${item.profiles?.full_name || "-"}`,
-      `Divisi      : ${item.profiles?.division || "-"}`,
+      `Nama        : ${
+        item.profiles?.full_name || "-"
+      }`,
+      `Divisi      : ${
+        item.profiles?.division || "-"
+      }`,
       `Tanggal     : ${date}`,
-      `Jam Masuk   : ${formatTime(item.check_in)}`,
-      `Jam Pulang  : ${formatTime(item.check_out)}`,
-      `Status      : ${statusText(item.status)}`,
+      `Jam Masuk   : ${formatTime(
+        item.check_in
+      )}`,
+      `Jam Pulang  : ${formatTime(
+        item.check_out
+      )}`,
+      `Status      : ${statusText(
+        item.status
+      )}`,
+      `Approval    : ${
+        item.approval_status || "pending"
+      }`,
       "",
       "------------------------------------------------------------",
       "PEKERJAAN YANG DISELESAIKAN",
       "------------------------------------------------------------",
       "",
       ...(tasks.length
-        ? tasks.map((task, index) => `[${String(index + 1).padStart(2, "0")}] ${task}`)
-        : ["Belum ada laporan pekerjaan."]),
+        ? tasks.map(
+            (task, index) =>
+              `[${String(
+                index + 1
+              ).padStart(
+                2,
+                "0"
+              )}] ${task}`
+          )
+        : [
+            "Belum ada laporan pekerjaan.",
+          ]),
       "",
       "------------------------------------------------------------",
       "RINGKASAN",
@@ -293,30 +523,58 @@ export default function AttendancePage() {
       "============================================================",
     ].join("\n");
 
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+    const blob = new Blob(
+      [content],
+      {
+        type:
+          "text/plain;charset=utf-8",
+      }
+    );
 
-    const safeName = (item.profiles?.full_name || "karyawan")
-      .replace(/[^a-zA-Z0-9-_]/g, "_")
-      .replace(/_+/g, "_");
+    const url =
+      URL.createObjectURL(blob);
+
+    const link =
+      document.createElement("a");
+
+    const safeName = (
+      item.profiles?.full_name ||
+      "karyawan"
+    )
+      .replace(
+        /[^a-zA-Z0-9-_]/g,
+        "_"
+      )
+      .replace(
+        /_+/g,
+        "_"
+      );
 
     link.href = url;
-    link.download = `Laporan_Pekerjaan_${safeName}_${new Date(
-      item.created_at
-    ).toISOString().slice(0, 10)}.txt`;
+
+    link.download =
+      `Laporan_Pekerjaan_${safeName}_${new Date(
+        item.created_at
+      )
+        .toISOString()
+        .slice(0, 10)}.txt`;
 
     document.body.appendChild(link);
+
     link.click();
+
     document.body.removeChild(link);
+
     URL.revokeObjectURL(url);
   };
 
-  /* =========================
-     PRINT
-  ========================= */
+  // =========================================================
+  // PRINT PDF
+  // =========================================================
 
-  const handlePrintPDF = (date: string) => {
+  const handlePrintPDF = (
+    date: string
+  ) => {
     setPrintDate(date);
 
     setTimeout(() => {
@@ -328,44 +586,55 @@ export default function AttendancePage() {
     }, 150);
   };
 
-  /* =========================
-     GROUP DATA
-  ========================= */
+  // =========================================================
+  // GROUP DATA
+  // =========================================================
 
-  const grouped = useMemo<GroupedData>(() => {
-    const result: GroupedData = {};
+  const grouped =
+    useMemo<GroupedData>(() => {
+      const result: GroupedData =
+        {};
 
-    attendances.forEach((item) => {
-      const date = new Date(item.created_at).toLocaleDateString(
-        "id-ID",
-        {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-          year: "numeric",
+      attendances.forEach(
+        (item) => {
+          const date =
+            new Date(
+              item.created_at
+            ).toLocaleDateString(
+              "id-ID",
+              {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              }
+            );
+
+          const division =
+            item.profiles?.division ||
+            "Tanpa Divisi";
+
+          if (!result[date]) {
+            result[date] = {};
+          }
+
+          if (!result[date][division]) {
+            result[date][division] =
+              [];
+          }
+
+          result[date][division].push(
+            item
+          );
         }
       );
 
-      const division =
-        item.profiles?.division || "Tanpa Divisi";
+      return result;
+    }, [attendances]);
 
-      if (!result[date]) {
-        result[date] = {};
-      }
-
-      if (!result[date][division]) {
-        result[date][division] = [];
-      }
-
-      result[date][division].push(item);
-    });
-
-    return result;
-  }, [attendances]);
-
-  /* =========================
-     LOADING
-  ========================= */
+  // =========================================================
+  // LOADING
+  // =========================================================
 
   if (loading) {
     return (
@@ -385,22 +654,28 @@ export default function AttendancePage() {
     );
   }
 
-  const dates = Object.entries(grouped);
-  const dashboardPath = getDashboardPath(userRole);
+  const dates =
+    Object.entries(grouped);
 
-  /* =========================
-     UI
-  ========================= */
+  const dashboardPath =
+    getDashboardPath(userRole);
+
+  // =========================================================
+  // UI
+  // =========================================================
 
   return (
     <main className="min-h-screen bg-[#f8fafc] text-slate-900 print:bg-white">
 
-      {/* ================= HEADER ================= */}
+      {/* =====================================================
+          HEADER
+      ===================================================== */}
+
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl print:hidden">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between px-5 py-4 sm:px-8">
 
-          {/* LOGO */}
           <div className="flex items-center gap-3">
+
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-lg font-black text-white shadow-lg shadow-blue-100">
               A
             </div>
@@ -414,12 +689,13 @@ export default function AttendancePage() {
                 Attendance Management
               </p>
             </div>
+
           </div>
 
-          {/* USER */}
           <div className="flex items-center gap-4">
 
             <div className="hidden text-right sm:block">
+
               <p className="text-sm font-bold text-slate-700">
                 {userEmail}
               </p>
@@ -427,34 +703,45 @@ export default function AttendancePage() {
               <p className="text-[9px] font-black uppercase tracking-[0.15em] text-blue-600">
                 {userRole}
               </p>
+
             </div>
 
-            {/* ROLE BASED DASHBOARD */}
             <Link
               href={dashboardPath}
               className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
             >
               ←
+
               <span className="hidden sm:inline">
                 Dashboard
               </span>
             </Link>
 
           </div>
+
         </div>
       </header>
 
-      {/* ================= CONTENT ================= */}
+      {/* =====================================================
+          CONTENT
+      ===================================================== */}
+
       <div className="mx-auto max-w-[1500px] px-4 py-7 sm:px-8 sm:py-9 print:p-0">
 
         {/* TITLE */}
+
         <section className="mb-7 print:hidden">
+
           <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
 
             <div>
+
               <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-[10px] font-black uppercase tracking-wider text-blue-600">
+
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+
                 Attendance Logs
+
               </div>
 
               <h2 className="text-3xl font-black tracking-tight text-slate-950">
@@ -464,31 +751,41 @@ export default function AttendancePage() {
               <p className="mt-1.5 text-sm font-medium text-slate-400">
                 Pantau absensi karyawan berdasarkan tanggal dan divisi.
               </p>
+
             </div>
 
-            {/* TOTAL */}
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
                 Total Data
               </p>
 
               <p className="mt-0.5 text-xl font-black text-slate-900">
+
                 {attendances.length}
 
                 <span className="ml-1 text-xs font-bold text-slate-400">
                   absensi
                 </span>
+
               </p>
+
             </div>
 
           </div>
+
         </section>
 
-        {/* ================= EMPTY ================= */}
+        {/* ===================================================
+            EMPTY
+        =================================================== */}
+
         {!dates.length ? (
+
           <section className="flex min-h-[450px] items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white">
 
             <div className="text-center">
+
               <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-slate-50 text-4xl">
                 📭
               </div>
@@ -500,594 +797,1122 @@ export default function AttendancePage() {
               <p className="mt-2 text-sm font-medium text-slate-400">
                 Data absensi karyawan akan muncul di sini.
               </p>
+
             </div>
 
           </section>
+
         ) : (
 
-          /* ================= DATE LIST ================= */
+          /* =================================================
+             DATE LIST
+          ================================================= */
+
           <div className="space-y-10">
 
-            {dates.map(([date, divisions]) => {
+            {dates.map(
+              ([date, divisions]) => {
 
-              const hidden =
-                printDate && printDate !== date
-                  ? "print:hidden"
-                  : "";
+                const hidden =
+                  printDate &&
+                  printDate !== date
+                    ? "print:hidden"
+                    : "";
 
-              const divisionEntries =
-                Object.entries(divisions);
+                const divisionEntries =
+                  Object.entries(
+                    divisions
+                  );
 
-              return (
-                <section
-                  key={date}
-                  className={hidden}
-                >
+                return (
+                  <section
+                    key={date}
+                    className={hidden}
+                  >
 
-                  {/* DATE HEADER */}
-                  <div className="mb-4 flex items-center justify-between">
+                    {/* DATE HEADER */}
 
-                    <div className="flex items-center gap-3">
+                    <div className="mb-4 flex items-center justify-between">
 
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-lg shadow-lg shadow-blue-100">
-                        📅
+                      <div className="flex items-center gap-3">
+
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-lg shadow-lg shadow-blue-100">
+                          📅
+                        </div>
+
+                        <div>
+
+                          <h3 className="text-lg font-black capitalize text-slate-900 sm:text-xl">
+                            {date}
+                          </h3>
+
+                          <p className="text-xs font-medium text-slate-400">
+                            {divisionEntries.length} divisi
+                          </p>
+
+                        </div>
+
                       </div>
 
-                      <div>
-                        <h3 className="text-lg font-black capitalize text-slate-900 sm:text-xl">
-                          {date}
-                        </h3>
+                      <button
+                        onClick={() =>
+                          handlePrintPDF(
+                            date
+                          )
+                        }
+                        className="flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-red-100 transition hover:-translate-y-0.5 hover:bg-red-600 active:scale-95 print:hidden"
+                      >
+                        📄
 
-                        <p className="text-xs font-medium text-slate-400">
-                          {divisionEntries.length} divisi
-                        </p>
-                      </div>
+                        <span className="hidden sm:inline">
+                          Download PDF
+                        </span>
+                      </button>
 
                     </div>
 
-                    {/* PRINT */}
-                    <button
-                      onClick={() => handlePrintPDF(date)}
-                      className="flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-xs font-black text-white shadow-lg shadow-red-100 transition hover:-translate-y-0.5 hover:bg-red-600 active:scale-95 print:hidden"
-                    >
-                      📄
+                    {/* DIVISIONS */}
 
-                      <span className="hidden sm:inline">
-                        Download PDF
-                      </span>
-                    </button>
+                    <div className="space-y-5">
 
-                  </div>
+                      {divisionEntries.map(
+                        ([division, items]) => {
 
-                  {/* ================= DIVISIONS ================= */}
-                  <div className="space-y-5">
+                          const present =
+                            items.filter(
+                              (item) =>
+                                item.status ===
+                                  "present" ||
+                                item.status ===
+                                  "late"
+                            ).length;
 
-                    {divisionEntries.map(
-                      ([division, items]) => {
+                          const pending =
+                            items.filter(
+                              (item) =>
+                                item.approval_status ===
+                                "pending"
+                            ).length;
 
-                        const present = items.filter(
-                          (item) =>
-                            item.status === "present" ||
-                            item.status === "late"
-                        ).length;
+                          const rejected =
+                            items.filter(
+                              (item) =>
+                                item.approval_status ===
+                                "rejected"
+                            ).length;
 
-                        const pending = items.filter(
-                          (item) =>
-                            item.approval_status === "pending"
-                        ).length;
+                          return (
+                            <div
+                              key={division}
+                              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
+                            >
 
-                        return (
-                          <div
-                            key={division}
-                            className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
-                          >
+                              {/* DIVISION HEADER */}
 
-                            {/* DIVISION HEADER */}
-                            <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 
-                              <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-3">
 
-                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-black text-white">
-                                  {initial(division)}
+                                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-black text-white">
+                                    {initial(
+                                      division
+                                    )}
+                                  </div>
+
+                                  <div>
+
+                                    <h4 className="text-sm font-black text-slate-900">
+                                      {division}
+                                    </h4>
+
+                                    <p className="mt-0.5 text-[10px] font-semibold text-slate-400">
+                                      {items.length} karyawan
+                                    </p>
+
+                                  </div>
+
                                 </div>
 
-                                <div>
-                                  <h4 className="text-sm font-black text-slate-900">
-                                    {division}
-                                  </h4>
+                                <div className="flex flex-wrap items-center gap-2">
 
-                                  <p className="mt-0.5 text-[10px] font-semibold text-slate-400">
-                                    {items.length} karyawan
-                                  </p>
-                                </div>
-
-                              </div>
-
-                              <div className="flex items-center gap-2">
-
-                                <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[10px] font-black text-emerald-600">
-                                  ✓ {present} HADIR
-                                </span>
-
-                                {pending > 0 && (
-                                  <span className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[10px] font-black text-amber-600">
-                                    ⏳ {pending} PENDING
+                                  <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[10px] font-black text-emerald-600">
+                                    ✓ {present} HADIR
                                   </span>
-                                )}
+
+                                  {pending >
+                                    0 && (
+                                    <span className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[10px] font-black text-amber-600">
+                                      ⏳{" "}
+                                      {pending}{" "}
+                                      PENDING
+                                    </span>
+                                  )}
+
+                                  {rejected >
+                                    0 && (
+                                    <span className="rounded-lg bg-rose-50 px-2.5 py-1.5 text-[10px] font-black text-rose-600">
+                                      ✕{" "}
+                                      {rejected}{" "}
+                                      REJECTED
+                                    </span>
+                                  )}
+
+                                </div>
+
+                              </div>
+
+                              {/* TABLE */}
+
+                              <div className="overflow-x-auto">
+
+                                <table className="w-full min-w-[1250px] text-left">
+
+                                  <thead className="border-b border-slate-100 bg-white">
+
+                                    <tr>
+
+                                      {[
+                                        "Employee",
+                                        "Photo",
+                                        "Time",
+                                        "Location",
+                                        "Status",
+                                        "Approval",
+                                        "Action",
+                                      ].map(
+                                        (title) => (
+                                          <th
+                                            key={
+                                              title
+                                            }
+                                            className={`px-5 py-3 text-[9px] font-black uppercase tracking-widest text-slate-400 ${
+                                              title ===
+                                                "Status" ||
+                                              title ===
+                                                "Approval"
+                                                ? "text-center"
+                                                : title ===
+                                                    "Action"
+                                                  ? "text-right print:hidden"
+                                                  : ""
+                                            }`}
+                                          >
+                                            {
+                                              title
+                                            }
+                                          </th>
+                                        )
+                                      )}
+
+                                    </tr>
+
+                                  </thead>
+
+                                  <tbody className="divide-y divide-slate-100">
+
+                                    {items.map(
+                                      (
+                                        item
+                                      ) => {
+
+                                        const noPhoto =
+                                          item.status ===
+                                            "sakit" ||
+                                          item.status ===
+                                            "izin";
+
+                                        const status =
+                                          statusText(
+                                            item.status
+                                          );
+
+                                        const statusClass =
+                                          item.status ===
+                                          "present"
+                                            ? "border-emerald-200 bg-emerald-50 text-emerald-600"
+                                            : item.status ===
+                                              "late"
+                                              ? "border-amber-200 bg-amber-50 text-amber-600"
+                                              : item.status ===
+                                                "sakit"
+                                                ? "border-orange-200 bg-orange-50 text-orange-600"
+                                                : item.status ===
+                                                  "izin"
+                                                  ? "border-violet-200 bg-violet-50 text-violet-600"
+                                                  : "border-rose-200 bg-rose-50 text-rose-600";
+
+                                        const approvalClass =
+                                          item.approval_status ===
+                                          "approved"
+                                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                            : item.approval_status ===
+                                              "rejected"
+                                              ? "border-rose-200 bg-rose-50 text-rose-600"
+                                              : "border-amber-200 bg-amber-50 text-amber-600";
+
+                                        return (
+                                          <tr
+                                            key={
+                                              item.id
+                                            }
+                                            className="group transition hover:bg-slate-50/70 print:break-inside-avoid"
+                                          >
+
+                                            {/* EMPLOYEE */}
+
+                                            <td className="px-5 py-4">
+
+                                              <div className="flex items-center gap-3">
+
+                                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xs font-black text-blue-600">
+                                                  {initial(
+                                                    item
+                                                      .profiles
+                                                      ?.full_name
+                                                  )}
+                                                </div>
+
+                                                <div>
+
+                                                  <p className="text-sm font-black text-slate-800">
+                                                    {
+                                                      item
+                                                        .profiles
+                                                        ?.full_name
+                                                    }
+                                                  </p>
+
+                                                  <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                                                    {
+                                                      division
+                                                    }
+                                                  </p>
+
+                                                </div>
+
+                                              </div>
+
+                                            </td>
+
+                                            {/* PHOTO */}
+
+                                            <td className="px-5 py-4 print:hidden">
+
+                                              {noPhoto ? (
+
+                                                <span className="text-[10px] italic font-medium text-slate-400">
+                                                  Tanpa Foto
+                                                </span>
+
+                                              ) : (
+
+                                                <div className="flex items-center gap-2">
+
+                                                  {/* CHECK IN */}
+
+                                                  {item.photo_check_in ? (
+
+                                                    <a
+                                                      href={
+                                                        item.photo_check_in
+                                                      }
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="group/photo relative block"
+                                                    >
+
+                                                      <img
+                                                        src={
+                                                          item.photo_check_in
+                                                        }
+                                                        alt="Check In"
+                                                        className="h-11 w-11 rounded-xl border-2 border-white object-cover shadow-sm transition group-hover/photo:scale-110"
+                                                      />
+
+                                                      <span className="absolute -bottom-1 -right-1 rounded-full bg-blue-600 px-1.5 py-0.5 text-[7px] font-black text-white ring-2 ring-white">
+                                                        IN
+                                                      </span>
+
+                                                    </a>
+
+                                                  ) : (
+
+                                                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-[8px] font-bold text-slate-400">
+                                                      No In
+                                                    </div>
+
+                                                  )}
+
+                                                  {/* CHECK OUT */}
+
+                                                  {item.photo_check_out ? (
+
+                                                    <a
+                                                      href={
+                                                        item.photo_check_out
+                                                      }
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="group/photo relative block"
+                                                    >
+
+                                                      <img
+                                                        src={
+                                                          item.photo_check_out
+                                                        }
+                                                        alt="Check Out"
+                                                        className="h-11 w-11 rounded-xl border-2 border-white object-cover shadow-sm transition group-hover/photo:scale-110"
+                                                      />
+
+                                                      <span className="absolute -bottom-1 -right-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-[7px] font-black text-white ring-2 ring-white">
+                                                        OUT
+                                                      </span>
+
+                                                    </a>
+
+                                                  ) : (
+
+                                                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-[8px] font-bold text-slate-400">
+                                                      No Out
+                                                    </div>
+
+                                                  )}
+
+                                                </div>
+
+                                              )}
+
+                                            </td>
+
+                                            {/* TIME */}
+
+                                            <td className="px-5 py-4">
+
+                                              <div className="space-y-1.5">
+
+                                                <div className="flex items-center gap-2">
+
+                                                  <span className="w-8 text-[9px] font-black text-slate-400">
+                                                    {noPhoto
+                                                      ? "JAM"
+                                                      : "IN"}
+                                                  </span>
+
+                                                  <span className="text-sm font-black text-blue-600">
+                                                    {formatTime(
+                                                      item.check_in
+                                                    )}
+                                                  </span>
+
+                                                </div>
+
+                                                {!noPhoto && (
+                                                  <div className="flex items-center gap-2">
+
+                                                    <span className="w-8 text-[9px] font-black text-slate-400">
+                                                      OUT
+                                                    </span>
+
+                                                    <span className="text-sm font-black text-orange-500">
+                                                      {formatTime(
+                                                        item.check_out
+                                                      )}
+                                                    </span>
+
+                                                  </div>
+                                                )}
+
+                                              </div>
+
+                                            </td>
+
+                                            {/* LOCATION */}
+
+                                            <td className="px-5 py-4">
+
+                                              {noPhoto ? (
+
+                                                <div className="max-w-[200px]">
+
+                                                  <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                                                    Alasan{" "}
+                                                    {
+                                                      status
+                                                    }
+                                                  </p>
+
+                                                  <p className="mt-1 text-xs font-medium italic text-slate-600">
+                                                    {item.reason ||
+                                                      "Tidak ada keterangan."}
+                                                  </p>
+
+                                                </div>
+
+                                              ) : (
+
+                                                <div className="flex flex-col gap-1.5">
+
+                                                  {/* GPS IN */}
+
+                                                  {item.latitude !=
+                                                    null &&
+                                                  item.longitude !=
+                                                    null ? (
+
+                                                    <a
+                                                      href={`https://www.google.com/maps?q=${item.latitude},${item.longitude}`}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-600 transition hover:bg-blue-600 hover:text-white print:bg-transparent print:text-black"
+                                                    >
+                                                      📍 Masuk
+                                                    </a>
+
+                                                  ) : (
+
+                                                    <span className="text-[9px] italic text-slate-400">
+                                                      No GPS In
+                                                    </span>
+
+                                                  )}
+
+                                                  {/* GPS OUT */}
+
+                                                  {item.latitude_out !=
+                                                    null &&
+                                                  item.longitude_out !=
+                                                    null ? (
+
+                                                    <a
+                                                      href={`https://www.google.com/maps?q=${item.latitude_out},${item.longitude_out}`}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-orange-50 px-2.5 py-1 text-[10px] font-black text-orange-600 transition hover:bg-orange-500 hover:text-white print:bg-transparent print:text-black"
+                                                    >
+                                                      📍 Pulang
+                                                    </a>
+
+                                                  ) : (
+
+                                                    <span className="text-[9px] italic text-slate-400">
+                                                      No GPS Out
+                                                    </span>
+
+                                                  )}
+
+                                                </div>
+
+                                              )}
+
+                                            </td>
+
+                                            {/* STATUS */}
+
+                                            <td className="px-5 py-4 text-center">
+
+                                              <span
+                                                className={`inline-flex rounded-lg border px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider ${statusClass}`}
+                                              >
+                                                {
+                                                  status
+                                                }
+                                              </span>
+
+                                            </td>
+
+                                            {/* APPROVAL */}
+
+                                            <td className="px-5 py-4 text-center">
+
+                                              <div className="flex flex-col items-center gap-2">
+
+                                                <span
+                                                  className={`inline-flex rounded-lg border px-2.5 py-1.5 text-[9px] font-black ${approvalClass}`}
+                                                >
+                                                  {item.approval_status ===
+                                                  "approved"
+                                                    ? "✓ Approved"
+                                                    : item.approval_status ===
+                                                      "rejected"
+                                                      ? "✕ Rejected"
+                                                      : "◷ Pending"}
+                                                </span>
+
+                                                {/* REJECTION REASON */}
+
+                                                {item.approval_status ===
+                                                  "rejected" &&
+                                                  item.rejection_reason && (
+                                                    <div className="max-w-[240px] rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-left">
+
+                                                      <p className="text-[8px] font-black uppercase tracking-wider text-rose-400">
+                                                        Alasan Penolakan
+                                                      </p>
+
+                                                      <p className="mt-1 text-[10px] font-semibold leading-4 text-rose-700">
+                                                        {
+                                                          item.rejection_reason
+                                                        }
+                                                      </p>
+
+                                                    </div>
+                                                  )}
+
+                                              </div>
+
+                                            </td>
+
+                                            {/* ACTION */}
+
+                                            <td className="px-5 py-4 text-right print:hidden">
+
+                                              <div className="flex flex-col items-end gap-2">
+
+                                                {/* LAPORAN */}
+
+                                                {Array.isArray(
+                                                  item.task_list
+                                                ) &&
+                                                  item.task_list.some(
+                                                    (
+                                                      task
+                                                    ) =>
+                                                      typeof task ===
+                                                        "string" &&
+                                                      task
+                                                        .trim()
+                                                        .length >
+                                                        0
+                                                  ) && (
+
+                                                    <button
+                                                      onClick={() =>
+                                                        setSelectedReport(
+                                                          item
+                                                        )
+                                                      }
+                                                      className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-600 transition hover:-translate-y-0.5 hover:bg-blue-600 hover:text-white"
+                                                    >
+                                                      📋 Laporan
+                                                    </button>
+
+                                                  )}
+
+                                                {/* APPROVAL ACTION */}
+
+                                                {item.approval_status ===
+                                                "pending" ? (
+
+                                                  <div className="flex justify-end gap-1.5">
+
+                                                    <button
+                                                      onClick={() =>
+                                                        handleApprove(
+                                                          item
+                                                        )
+                                                      }
+                                                      disabled={
+                                                        approvalLoading
+                                                      }
+                                                      className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-[10px] font-black text-emerald-600 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                      ✓ Approve
+                                                    </button>
+
+                                                    <button
+                                                      onClick={() =>
+                                                        openRejectModal(
+                                                          item
+                                                        )
+                                                      }
+                                                      disabled={
+                                                        approvalLoading
+                                                      }
+                                                      className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                                    >
+                                                      ✕ Reject
+                                                    </button>
+
+                                                  </div>
+
+                                                ) : (
+
+                                                  <span className="text-[9px] font-black uppercase tracking-wider text-slate-300">
+                                                    Done
+                                                  </span>
+
+                                                )}
+
+                                              </div>
+
+                                            </td>
+
+                                          </tr>
+                                        );
+                                      }
+                                    )}
+
+                                  </tbody>
+
+                                </table>
 
                               </div>
 
                             </div>
+                          );
+                        }
+                      )}
 
-                            {/* ================= TABLE ================= */}
-                            <div className="overflow-x-auto">
+                    </div>
 
-                              <table className="w-full min-w-[1050px] text-left">
-
-                                <thead className="border-b border-slate-100 bg-white">
-                                  <tr>
-
-                                    {[
-                                      "Employee",
-                                      "Photo",
-                                      "Time",
-                                      "Location",
-                                      "Status",
-                                      "Approval",
-                                      "Action",
-                                    ].map((title) => (
-                                      <th
-                                        key={title}
-                                        className={`px-5 py-3 text-[9px] font-black uppercase tracking-widest text-slate-400 ${
-                                          title === "Status" ||
-                                          title === "Approval"
-                                            ? "text-center"
-                                            : title === "Action"
-                                            ? "text-right print:hidden"
-                                            : ""
-                                        }`}
-                                      >
-                                        {title}
-                                      </th>
-                                    ))}
-
-                                  </tr>
-                                </thead>
-
-                                <tbody className="divide-y divide-slate-100">
-
-                                  {items.map((item) => {
-
-                                    const noPhoto =
-                                      item.status === "sakit" ||
-                                      item.status === "izin";
-
-                                    const status =
-                                      statusText(item.status);
-
-                                    const statusClass =
-                                      item.status === "present"
-                                        ? "border-emerald-200 bg-emerald-50 text-emerald-600"
-                                        : item.status === "late"
-                                        ? "border-amber-200 bg-amber-50 text-amber-600"
-                                        : item.status === "sakit"
-                                        ? "border-orange-200 bg-orange-50 text-orange-600"
-                                        : item.status === "izin"
-                                        ? "border-violet-200 bg-violet-50 text-violet-600"
-                                        : "border-rose-200 bg-rose-50 text-rose-600";
-
-                                    const approvalClass =
-                                      item.approval_status === "approved"
-                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                        : item.approval_status === "rejected"
-                                        ? "border-rose-200 bg-rose-50 text-rose-600"
-                                        : "border-amber-200 bg-amber-50 text-amber-600";
-
-                                    return (
-                                      <tr
-                                        key={item.id}
-                                        className="group transition hover:bg-slate-50/70 print:break-inside-avoid"
-                                      >
-
-                                        {/* EMPLOYEE */}
-                                        <td className="px-5 py-4">
-                                          <div className="flex items-center gap-3">
-
-                                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xs font-black text-blue-600">
-                                              {initial(
-                                                item.profiles?.full_name
-                                              )}
-                                            </div>
-
-                                            <div>
-                                              <p className="text-sm font-black text-slate-800">
-                                                {item.profiles?.full_name}
-                                              </p>
-
-                                              <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                                                {division}
-                                              </p>
-                                            </div>
-
-                                          </div>
-                                        </td>
-
-                                        {/* PHOTO */}
-                                        <td className="px-5 py-4 print:hidden">
-
-                                          {noPhoto ? (
-                                            <span className="text-[10px] italic font-medium text-slate-400">
-                                              Tanpa Foto
-                                            </span>
-                                          ) : (
-                                            <div className="flex items-center gap-2">
-
-                                              {/* CHECK IN PHOTO */}
-                                              {item.photo_check_in ? (
-                                                <a
-                                                  href={item.photo_check_in}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="group/photo relative block"
-                                                >
-                                                  <img
-                                                    src={item.photo_check_in}
-                                                    alt="Check In"
-                                                    className="h-11 w-11 rounded-xl border-2 border-white object-cover shadow-sm transition group-hover/photo:scale-110"
-                                                  />
-
-                                                  <span className="absolute -bottom-1 -right-1 rounded-full bg-blue-600 px-1.5 py-0.5 text-[7px] font-black text-white ring-2 ring-white">
-                                                    IN
-                                                  </span>
-                                                </a>
-                                              ) : (
-                                                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-[8px] font-bold text-slate-400">
-                                                  No In
-                                                </div>
-                                              )}
-
-                                              {/* CHECK OUT PHOTO */}
-                                              {item.photo_check_out ? (
-                                                <a
-                                                  href={item.photo_check_out}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="group/photo relative block"
-                                                >
-                                                  <img
-                                                    src={item.photo_check_out}
-                                                    alt="Check Out"
-                                                    className="h-11 w-11 rounded-xl border-2 border-white object-cover shadow-sm transition group-hover/photo:scale-110"
-                                                  />
-
-                                                  <span className="absolute -bottom-1 -right-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-[7px] font-black text-white ring-2 ring-white">
-                                                    OUT
-                                                  </span>
-                                                </a>
-                                              ) : (
-                                                <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-[8px] font-bold text-slate-400">
-                                                  No Out
-                                                </div>
-                                              )}
-
-                                            </div>
-                                          )}
-
-                                        </td>
-
-                                        {/* TIME */}
-                                        <td className="px-5 py-4">
-
-                                          <div className="space-y-1.5">
-
-                                            <div className="flex items-center gap-2">
-                                              <span className="w-8 text-[9px] font-black text-slate-400">
-                                                {noPhoto ? "JAM" : "IN"}
-                                              </span>
-
-                                              <span className="text-sm font-black text-blue-600">
-                                                {formatTime(
-                                                  item.check_in
-                                                )}
-                                              </span>
-                                            </div>
-
-                                            {!noPhoto && (
-                                              <div className="flex items-center gap-2">
-
-                                                <span className="w-8 text-[9px] font-black text-slate-400">
-                                                  OUT
-                                                </span>
-
-                                                <span className="text-sm font-black text-orange-500">
-                                                  {formatTime(
-                                                    item.check_out
-                                                  )}
-                                                </span>
-
-                                              </div>
-                                            )}
-
-                                          </div>
-
-                                        </td>
-
-                                        {/* LOCATION */}
-                                        <td className="px-5 py-4">
-
-                                          {noPhoto ? (
-                                            <div className="max-w-[200px]">
-
-                                              <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
-                                                Alasan {status}
-                                              </p>
-
-                                              <p className="mt-1 text-xs font-medium italic text-slate-600">
-                                                {item.reason ||
-                                                  "Tidak ada keterangan."}
-                                              </p>
-
-                                            </div>
-                                          ) : (
-                                            <div className="flex flex-col gap-1.5">
-
-                                              {/* GPS IN */}
-                                              {item.latitude != null &&
-                                              item.longitude != null ? (
-                                                <a
-                                                  href={`https://www.google.com/maps?q=${item.latitude},${item.longitude}`}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-600 transition hover:bg-blue-600 hover:text-white print:bg-transparent print:text-black"
-                                                >
-                                                  📍 Masuk
-                                                </a>
-                                              ) : (
-                                                <span className="text-[9px] italic text-slate-400">
-                                                  No GPS In
-                                                </span>
-                                              )}
-
-                                              {/* GPS OUT */}
-                                              {item.latitude_out != null &&
-                                              item.longitude_out != null ? (
-                                                <a
-                                                  href={`https://www.google.com/maps?q=${item.latitude_out},${item.longitude_out}`}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-orange-50 px-2.5 py-1 text-[10px] font-black text-orange-600 transition hover:bg-orange-500 hover:text-white print:bg-transparent print:text-black"
-                                                >
-                                                  📍 Pulang
-                                                </a>
-                                              ) : (
-                                                <span className="text-[9px] italic text-slate-400">
-                                                  No GPS Out
-                                                </span>
-                                              )}
-
-                                            </div>
-                                          )}
-
-                                        </td>
-
-                                        {/* STATUS */}
-                                        <td className="px-5 py-4 text-center">
-
-                                          <span
-                                            className={`inline-flex rounded-lg border px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider ${statusClass}`}
-                                          >
-                                            {status}
-                                          </span>
-
-                                        </td>
-
-                                        {/* APPROVAL */}
-                                        <td className="px-5 py-4 text-center">
-
-                                          <span
-                                            className={`inline-flex rounded-lg border px-2.5 py-1.5 text-[9px] font-black ${approvalClass}`}
-                                          >
-                                            {item.approval_status ===
-                                            "approved"
-                                              ? "✓ Approved"
-                                              : item.approval_status ===
-                                                "rejected"
-                                              ? "✕ Rejected"
-                                              : "◷ Pending"}
-                                          </span>
-
-                                        </td>
-
-                                        {/* ACTION */}
-                                        <td className="px-5 py-4 text-right print:hidden">
-
-                                          <div className="flex flex-col items-end gap-2">
-                                            {Array.isArray(item.task_list) &&
-                                              item.task_list.some(
-                                                (task) =>
-                                                  typeof task === "string" &&
-                                                  task.trim().length > 0
-                                              ) && (
-                                              <button
-                                                onClick={() => setSelectedReport(item)}
-                                                className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[10px] font-black text-blue-600 transition hover:-translate-y-0.5 hover:bg-blue-600 hover:text-white"
-                                              >
-                                                📋 Laporan
-                                              </button>
-                                            )}
-
-                                            {item.approval_status === "pending" ? (
-                                              <div className="flex justify-end gap-1.5">
-                                                <button
-                                                  onClick={() =>
-                                                    handleApproval(item.id, "approved")
-                                                  }
-                                                  className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-[10px] font-black text-emerald-600 transition hover:bg-emerald-50"
-                                                >
-                                                  Approve
-                                                </button>
-
-                                                <button
-                                                  onClick={() =>
-                                                    handleApproval(item.id, "rejected")
-                                                  }
-                                                  className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-[10px] font-black text-rose-600 transition hover:bg-rose-50"
-                                                >
-                                                  Reject
-                                                </button>
-                                              </div>
-                                            ) : (
-                                              <span className="text-[9px] font-black uppercase tracking-wider text-slate-300">
-                                                Done
-                                              </span>
-                                            )}
-                                          </div>
-
-                                        </td>
-
-                                      </tr>
-                                    );
-                                  })}
-
-                                </tbody>
-                              </table>
-
-                            </div>
-                          </div>
-                        );
-                      }
-                    )}
-
-                  </div>
-                </section>
-              );
-            })}
+                  </section>
+                );
+              }
+            )}
 
           </div>
+
         )}
+
       </div>
 
-      {/* ================= LAPORAN MODAL ================= */}
+      {/* =====================================================
+          LAPORAN MODAL
+      ===================================================== */}
+
       {selectedReport && (
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setSelectedReport(null);
+            if (
+              e.target ===
+              e.currentTarget
+            ) {
+              setSelectedReport(null);
+            }
           }}
         >
+
           <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-3xl border border-white/10 bg-white shadow-2xl">
+
             <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 text-white">
+
               <div className="flex items-center gap-3">
+
                 <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-xl">
                   📋
                 </div>
+
                 <div>
+
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-100">
                     Daily Work Report
                   </p>
+
                   <h3 className="text-lg font-black">
-                    {selectedReport.profiles?.full_name || "Karyawan"}
+                    {
+                      selectedReport
+                        .profiles
+                        ?.full_name ||
+                      "Karyawan"
+                    }
                   </h3>
+
                   <p className="text-xs font-medium text-blue-100">
-                    {selectedReport.profiles?.division || "Tanpa Divisi"}
+                    {
+                      selectedReport
+                        .profiles
+                        ?.division ||
+                      "Tanpa Divisi"
+                    }
                   </p>
+
                 </div>
+
               </div>
 
               <button
-                onClick={() => setSelectedReport(null)}
+                onClick={() =>
+                  setSelectedReport(null)
+                }
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-lg transition hover:bg-white/20"
               >
                 ×
               </button>
+
             </div>
 
             <div className="max-h-[58vh] overflow-y-auto p-6">
+
               <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+
                   <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
                     Tanggal
                   </p>
+
                   <p className="mt-1 text-sm font-black text-slate-800">
-                    {new Date(selectedReport.created_at).toLocaleDateString(
+                    {new Date(
+                      selectedReport.created_at
+                    ).toLocaleDateString(
                       "id-ID",
-                      { day: "numeric", month: "short", year: "numeric" }
+                      {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      }
                     )}
                   </p>
+
                 </div>
+
                 <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+
                   <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
                     Jam Kerja
                   </p>
+
                   <p className="mt-1 text-sm font-black text-slate-800">
-                    {formatTime(selectedReport.check_in)} —{" "}
-                    {formatTime(selectedReport.check_out)}
+                    {formatTime(
+                      selectedReport.check_in
+                    )}{" "}
+                    —{" "}
+                    {formatTime(
+                      selectedReport.check_out
+                    )}
                   </p>
+
                 </div>
+
                 <div className="col-span-2 rounded-2xl border border-blue-100 bg-blue-50 p-4 sm:col-span-1">
+
                   <p className="text-[9px] font-black uppercase tracking-wider text-blue-400">
                     Total Pekerjaan
                   </p>
+
                   <p className="mt-1 text-xl font-black text-blue-600">
-                    {(selectedReport.task_list || []).length}
-                    <span className="ml-1 text-xs">tugas</span>
+                    {
+                      (
+                        selectedReport.task_list ||
+                        []
+                      ).length
+                    }
+
+                    <span className="ml-1 text-xs">
+                      tugas
+                    </span>
                   </p>
+
                 </div>
+
               </div>
 
               <div className="overflow-hidden rounded-2xl border border-slate-200">
+
                 <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+
                   <h4 className="text-sm font-black text-slate-800">
                     Pekerjaan yang diselesaikan
                   </h4>
+
                   <p className="mt-0.5 text-xs font-medium text-slate-400">
                     Daftar pekerjaan yang dilaporkan saat absen pulang.
                   </p>
+
                 </div>
 
                 <div className="divide-y divide-slate-100">
-                  {(selectedReport.task_list || []).length > 0 ? (
-                    selectedReport.task_list!.map((task, index) => (
-                      <div
-                        key={`${selectedReport.id}-${index}`}
-                        className="flex gap-4 px-5 py-4 transition hover:bg-slate-50"
-                      >
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[10px] font-black text-blue-600">
-                          {String(index + 1).padStart(2, "0")}
-                        </span>
-                        <p className="pt-1 text-sm font-medium leading-6 text-slate-700">
-                          {task}
-                        </p>
-                      </div>
-                    ))
+
+                  {(
+                    selectedReport.task_list ||
+                    []
+                  ).length > 0 ? (
+
+                    selectedReport.task_list!.map(
+                      (
+                        task,
+                        index
+                      ) => (
+
+                        <div
+                          key={`${selectedReport.id}-${index}`}
+                          className="flex gap-4 px-5 py-4 transition hover:bg-slate-50"
+                        >
+
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-[10px] font-black text-blue-600">
+                            {String(
+                              index + 1
+                            ).padStart(
+                              2,
+                              "0"
+                            )}
+                          </span>
+
+                          <p className="pt-1 text-sm font-medium leading-6 text-slate-700">
+                            {task}
+                          </p>
+
+                        </div>
+
+                      )
+                    )
+
                   ) : (
+
                     <div className="px-5 py-10 text-center text-sm text-slate-400">
                       Belum ada pekerjaan yang dilaporkan.
                     </div>
+
                   )}
+
                 </div>
+
               </div>
+
             </div>
 
             <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:justify-end">
+
               <button
-                onClick={() => setSelectedReport(null)}
+                onClick={() =>
+                  setSelectedReport(null)
+                }
                 className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-xs font-black text-slate-600 transition hover:bg-slate-100"
               >
                 Tutup
               </button>
+
               <button
-                onClick={() => handleDownloadReport(selectedReport)}
+                onClick={() =>
+                  handleDownloadReport(
+                    selectedReport
+                  )
+                }
                 className="rounded-xl bg-slate-900 px-5 py-3 text-xs font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5 hover:bg-blue-600"
               >
                 💾 Simpan ke Notepad (.TXT)
               </button>
+
             </div>
+
           </div>
+
         </div>
       )}
 
-      {/* ================= PRINT STYLE ================= */}
+      {/* =====================================================
+          REJECT MODAL
+      ===================================================== */}
+
+      {rejectTarget && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          onMouseDown={(e) => {
+            if (
+              e.target ===
+              e.currentTarget
+            ) {
+              closeRejectModal();
+            }
+          }}
+        >
+
+          <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl">
+
+            {/* MODAL HEADER */}
+
+            <div className="border-b border-rose-100 bg-gradient-to-r from-rose-500 to-red-600 px-6 py-5 text-white">
+
+              <div className="flex items-center justify-between">
+
+                <div className="flex items-center gap-3">
+
+                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 text-xl">
+                    ✕
+                  </div>
+
+                  <div>
+
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-100">
+                      Approval Absensi
+                    </p>
+
+                    <h3 className="text-lg font-black">
+                      Tolak Absensi
+                    </h3>
+
+                  </div>
+
+                </div>
+
+                <button
+                  onClick={
+                    closeRejectModal
+                  }
+                  disabled={
+                    approvalLoading
+                  }
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-lg transition hover:bg-white/20 disabled:opacity-50"
+                >
+                  ×
+                </button>
+
+              </div>
+
+            </div>
+
+            {/* MODAL CONTENT */}
+
+            <div className="p-6">
+
+              {/* EMPLOYEE */}
+
+              <div className="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+
+                <div className="flex items-center gap-3">
+
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-100 text-sm font-black text-blue-600">
+                    {initial(
+                      rejectTarget
+                        .profiles
+                        ?.full_name
+                    )}
+                  </div>
+
+                  <div>
+
+                    <p className="text-sm font-black text-slate-800">
+                      {
+                        rejectTarget
+                          .profiles
+                          ?.full_name
+                      }
+                    </p>
+
+                    <p className="mt-0.5 text-xs font-medium text-slate-400">
+                      {
+                        rejectTarget
+                          .profiles
+                          ?.division ||
+                        "Tanpa Divisi"
+                      }
+                    </p>
+
+                  </div>
+
+                </div>
+
+                <div className="mt-3 border-t border-slate-200 pt-3">
+
+                  <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
+                    Tanggal Absensi
+                  </p>
+
+                  <p className="mt-1 text-sm font-bold text-slate-700">
+                    {formatDate(
+                      rejectTarget.created_at
+                    )}
+                  </p>
+
+                </div>
+
+              </div>
+
+              {/* REASON */}
+
+              <div>
+
+                <label
+                  htmlFor="rejectionReason"
+                  className="mb-2 block text-xs font-black uppercase tracking-wider text-slate-700"
+                >
+                  Alasan Penolakan
+                  <span className="ml-1 text-rose-500">
+                    *
+                  </span>
+                </label>
+
+                <textarea
+                  id="rejectionReason"
+                  value={
+                    rejectionReason
+                  }
+                  onChange={(e) =>
+                    setRejectionReason(
+                      e.target.value
+                    )
+                  }
+                  disabled={
+                    approvalLoading
+                  }
+                  rows={5}
+                  maxLength={500}
+                  placeholder="Contoh: Foto absensi kurang jelas. Silakan melakukan absensi ulang."
+                  className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:bg-slate-50"
+                />
+
+                <div className="mt-1 flex justify-between">
+
+                  <p className="text-[10px] font-medium text-slate-400">
+                    Alasan akan dilihat oleh karyawan.
+                  </p>
+
+                  <p className="text-[10px] font-bold text-slate-400">
+                    {
+                      rejectionReason.length
+                    }{" "}
+                    / 500
+                  </p>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* MODAL FOOTER */}
+
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50/70 p-4 sm:flex-row sm:justify-end">
+
+              <button
+                onClick={
+                  closeRejectModal
+                }
+                disabled={
+                  approvalLoading
+                }
+                className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-xs font-black text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Batal
+              </button>
+
+              <button
+                onClick={
+                  handleReject
+                }
+                disabled={
+                  approvalLoading ||
+                  !rejectionReason.trim()
+                }
+                className="rounded-xl bg-rose-600 px-5 py-3 text-xs font-black text-white shadow-lg shadow-rose-100 transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {approvalLoading
+                  ? "Menyimpan..."
+                  : "✕ Tolak & Simpan Alasan"}
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+      )}
+
+      {/* =====================================================
+          PRINT STYLE
+      ===================================================== */}
+
       <style jsx global>{`
         @media print {
           @page {
@@ -1102,6 +1927,7 @@ export default function AttendancePage() {
           header,
           button,
           input,
+          textarea,
           .print\\:hidden {
             display: none !important;
           }

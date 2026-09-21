@@ -19,6 +19,8 @@ interface Attendance {
   check_out: string | null;
   status: string | null;
   reason: string | null;
+  approval_status: "pending" | "approved" | "rejected" | null;
+  rejection_reason: string | null;
 }
 
 interface MonthOption {
@@ -28,7 +30,13 @@ interface MonthOption {
   label: string;
 }
 
-type FilterStatus = "all" | "present" | "late" | "izin" | "sakit";
+type FilterStatus =
+  | "all"
+  | "hadir"
+  | "late"
+  | "izin"
+  | "sakit"
+  | "rejected";
 
 export default function MyAttendancePage() {
   const router = useRouter();
@@ -78,7 +86,7 @@ export default function MyAttendancePage() {
           await supabase
             .from("attendance")
             .select(
-              "id, profile_id, created_at, check_in, check_out, status, reason"
+              "id, profile_id, created_at, check_in, check_out, status, reason, approval_status, rejection_reason"
             )
             .eq("profile_id", user.id)
             .order("created_at", { ascending: false });
@@ -223,8 +231,23 @@ export default function MyAttendancePage() {
 
   const filteredHistory = useMemo(() => {
     return monthlyHistory.filter((item) => {
+      const isRejected = item.approval_status === "rejected";
+
       const matchesStatus =
-        filter === "all" || item.status === filter;
+        filter === "all" ||
+        (filter === "hadir" &&
+          !isRejected &&
+          (item.status === "present" || item.status === "late")) ||
+        (filter === "late" &&
+          !isRejected &&
+          item.status === "late") ||
+        (filter === "izin" &&
+          !isRejected &&
+          item.status === "izin") ||
+        (filter === "sakit" &&
+          !isRejected &&
+          item.status === "sakit") ||
+        (filter === "rejected" && isRejected);
 
       const date = new Date(item.created_at);
 
@@ -243,6 +266,11 @@ export default function MyAttendancePage() {
         !searchText ||
         dateText.toLowerCase().includes(searchText) ||
         reasonText.toLowerCase().includes(searchText) ||
+        (item.rejection_reason || "")
+          .toLowerCase()
+          .includes(searchText) ||
+        (isRejected ? "ditolak rejected" : "")
+          .includes(searchText) ||
         (item.status || "")
           .toLowerCase()
           .includes(searchText);
@@ -256,24 +284,39 @@ export default function MyAttendancePage() {
   // ============================================================
 
   const statistics = useMemo(() => {
+    // Absensi yang ditolak tidak dihitung sebagai kehadiran.
+    // Terlambat tetap dihitung sebagai HADIR, sekaligus masuk
+    // ke kategori TERLAMBAT karena terlambat adalah subset dari hadir.
+    const validAttendance = monthlyHistory.filter(
+      (item) => item.approval_status !== "rejected"
+    );
+
+    const rejected = monthlyHistory.filter(
+      (item) => item.approval_status === "rejected"
+    ).length;
+
+    const present = validAttendance.filter(
+      (item) => item.status === "present"
+    ).length;
+
+    const late = validAttendance.filter(
+      (item) => item.status === "late"
+    ).length;
+
+    const hadir = present + late;
+
     return {
-      total: monthlyHistory.length,
-
-      present: monthlyHistory.filter(
-        (item) => item.status === "present"
-      ).length,
-
-      late: monthlyHistory.filter(
-        (item) => item.status === "late"
-      ).length,
-
-      izin: monthlyHistory.filter(
+      total: validAttendance.length,
+      hadir,
+      present,
+      late,
+      izin: validAttendance.filter(
         (item) => item.status === "izin"
       ).length,
-
-      sakit: monthlyHistory.filter(
+      sakit: validAttendance.filter(
         (item) => item.status === "sakit"
       ).length,
+      rejected,
     };
   }, [monthlyHistory]);
 
@@ -318,7 +361,14 @@ export default function MyAttendancePage() {
   // STATUS
   // ============================================================
 
-  const getStatusLabel = (status: string | null) => {
+  const getStatusLabel = (
+    status: string | null,
+    approvalStatus?: string | null
+  ) => {
+    if (approvalStatus === "rejected") {
+      return "Ditolak";
+    }
+
     switch (status) {
       case "present":
         return "Hadir";
@@ -337,7 +387,18 @@ export default function MyAttendancePage() {
     }
   };
 
-  const getStatusStyle = (status: string | null) => {
+  const getStatusStyle = (
+    status: string | null,
+    approvalStatus?: string | null
+  ) => {
+    if (approvalStatus === "rejected") {
+      return {
+        wrapper: "border-red-200 bg-red-50 text-red-700",
+        dot: "bg-red-500",
+        icon: "×",
+      };
+    }
+
     switch (status) {
       case "present":
         return {
@@ -701,16 +762,25 @@ export default function MyAttendancePage() {
         {/* STATISTICS */}
         {/* ==================================================== */}
 
-        <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3">
+          <p className="text-xs font-medium leading-5 text-blue-700">
+            <span className="font-black">Catatan:</span> absensi
+            <span className="font-black"> Terlambat </span>
+            tetap dihitung sebagai <span className="font-black">Hadir</span>.
+            Absensi yang <span className="font-black text-red-600">Ditolak</span>
+            tidak dihitung sebagai Hadir maupun Terlambat dan alasan penolakan
+            dari admin ditampilkan pada riwayat.
+          </p>
+        </div>
+
+        <section className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
           <StatCard
             label="Hadir"
-            value={statistics.present}
+            value={statistics.hadir}
             icon="check"
             percentage={
               statistics.total > 0
-                ? (statistics.present /
-                    statistics.total) *
-                  100
+                ? (statistics.hadir / statistics.total) * 100
                 : 0
             }
             progressClass="bg-emerald-500"
@@ -723,9 +793,7 @@ export default function MyAttendancePage() {
             icon="clock"
             percentage={
               statistics.total > 0
-                ? (statistics.late /
-                    statistics.total) *
-                  100
+                ? (statistics.late / statistics.total) * 100
                 : 0
             }
             progressClass="bg-amber-500"
@@ -738,9 +806,7 @@ export default function MyAttendancePage() {
             icon="permission"
             percentage={
               statistics.total > 0
-                ? (statistics.izin /
-                    statistics.total) *
-                  100
+                ? (statistics.izin / statistics.total) * 100
                 : 0
             }
             progressClass="bg-violet-500"
@@ -753,13 +819,24 @@ export default function MyAttendancePage() {
             icon="medical"
             percentage={
               statistics.total > 0
-                ? (statistics.sakit /
-                    statistics.total) *
-                  100
+                ? (statistics.sakit / statistics.total) * 100
                 : 0
             }
             progressClass="bg-orange-500"
             iconClass="bg-orange-50 text-orange-600"
+          />
+
+          <StatCard
+            label="Ditolak"
+            value={statistics.rejected}
+            icon="rejected"
+            percentage={
+              monthlyHistory.length > 0
+                ? (statistics.rejected / monthlyHistory.length) * 100
+                : 0
+            }
+            progressClass="bg-red-500"
+            iconClass="bg-red-50 text-red-600"
           />
         </section>
 
@@ -843,15 +920,15 @@ export default function MyAttendancePage() {
               <FilterButton
                 active={filter === "all"}
                 label="Semua"
-                count={statistics.total}
+                count={monthlyHistory.length}
                 onClick={() => setFilter("all")}
               />
 
               <FilterButton
-                active={filter === "present"}
+                active={filter === "hadir"}
                 label="Hadir"
-                count={statistics.present}
-                onClick={() => setFilter("present")}
+                count={statistics.hadir}
+                onClick={() => setFilter("hadir")}
               />
 
               <FilterButton
@@ -873,6 +950,13 @@ export default function MyAttendancePage() {
                 label="Sakit"
                 count={statistics.sakit}
                 onClick={() => setFilter("sakit")}
+              />
+
+              <FilterButton
+                active={filter === "rejected"}
+                label="Ditolak"
+                count={statistics.rejected}
+                onClick={() => setFilter("rejected")}
               />
             </div>
           </div>
@@ -925,7 +1009,10 @@ export default function MyAttendancePage() {
                   <tbody className="divide-y divide-gray-50">
                     {filteredHistory.map((item) => {
                       const statusStyle =
-                        getStatusStyle(item.status);
+                        getStatusStyle(
+                        item.status,
+                        item.approval_status
+                      );
 
                       const isSpecial =
                         item.status === "izin" ||
@@ -1068,14 +1155,25 @@ export default function MyAttendancePage() {
                               </span>
 
                               {getStatusLabel(
-                                item.status
+                                item.status,
+                                item.approval_status
                               )}
                             </span>
                           </td>
 
-                          {/* Reason */}
-                          <td className="max-w-[300px] px-6 py-5">
-                            {item.reason ? (
+                          {/* Reason / Rejection reason */}
+                          <td className="max-w-[340px] px-6 py-5">
+                            {item.approval_status === "rejected" ? (
+                              <div className="rounded-xl border border-red-100 bg-red-50 p-3">
+                                <p className="text-[9px] font-black uppercase tracking-wider text-red-500">
+                                  Alasan Admin
+                                </p>
+                                <p className="mt-1 text-xs font-semibold leading-5 text-red-700">
+                                  {item.rejection_reason ||
+                                    "Absensi ditolak oleh admin."}
+                                </p>
+                              </div>
+                            ) : item.reason ? (
                               <p className="truncate text-xs font-medium italic text-gray-500">
                                 "{item.reason}"
                               </p>
@@ -1099,7 +1197,10 @@ export default function MyAttendancePage() {
               <div className="space-y-3 p-4 md:hidden">
                 {filteredHistory.map((item) => {
                   const statusStyle =
-                    getStatusStyle(item.status);
+                    getStatusStyle(
+                        item.status,
+                        item.approval_status
+                      );
 
                   const isSpecial =
                     item.status === "izin" ||
@@ -1221,8 +1322,26 @@ export default function MyAttendancePage() {
                         </div>
                       </div>
 
-                      {/* Reason */}
-                      {item.reason && (
+                      {/* Reason / Rejection reason */}
+                      {item.approval_status === "rejected" ? (
+                        <div className="mt-3 rounded-xl border border-red-100 bg-red-50 p-3">
+                          <div className="flex gap-2">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-red-100 text-sm font-black text-red-600">
+                              ×
+                            </div>
+
+                            <div>
+                              <p className="text-[9px] font-black uppercase tracking-wider text-red-500">
+                                Ditolak Admin
+                              </p>
+                              <p className="mt-1 text-xs font-semibold leading-5 text-red-700">
+                                {item.rejection_reason ||
+                                  "Absensi ditolak oleh admin."}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : item.reason ? (
                         <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3">
                           <div className="flex gap-2">
                             <svg
@@ -1234,9 +1353,9 @@ export default function MyAttendancePage() {
                             >
                               <path
                                 strokeLinecap="round"
+                                strokeLinejoin="round"
                                 d="M8 10h8M8 14h5"
                               />
-
                               <rect
                                 width="18"
                                 height="16"
@@ -1251,7 +1370,7 @@ export default function MyAttendancePage() {
                             </p>
                           </div>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   );
                 })}
@@ -1402,6 +1521,22 @@ function StatCard({
               />
 
               <circle cx="12" cy="12" r="9" />
+            </svg>
+          )}
+
+          {icon === "rejected" && (
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path
+                strokeLinecap="round"
+                d="M9 9l6 6M15 9l-6 6"
+              />
             </svg>
           )}
         </div>

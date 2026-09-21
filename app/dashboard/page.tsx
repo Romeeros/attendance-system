@@ -41,6 +41,8 @@ export default function DashboardPage() {
   const [hasCheckedIn, setHasCheckedIn] = useState(false);
   const [hasCheckedOut, setHasCheckedOut] = useState(false);
   const [todayStatus, setTodayStatus] = useState<string | null>(null);
+  const [todayApprovalStatus, setTodayApprovalStatus] = useState<string | null>(null);
+  const [todayRejectionReason, setTodayRejectionReason] = useState<string | null>(null);
 
   // =========================================================
   // STATE LAPORAN PEKERJAAN (TASK LIST) SAAT ABSEN PULANG
@@ -307,6 +309,14 @@ export default function DashboardPage() {
             myTodayAttendance.status
           );
 
+          setTodayApprovalStatus(
+            myTodayAttendance.approval_status ?? null
+          );
+
+          setTodayRejectionReason(
+            myTodayAttendance.rejection_reason ?? null
+          );
+
           // ---------------------------------------------------
           // TASK LIST HARI INI (jika sudah pernah absen pulang)
           // ---------------------------------------------------
@@ -349,7 +359,7 @@ export default function DashboardPage() {
         } = await supabase
           .from("attendance")
           .select(
-            "created_at, status, check_in, task_count"
+            "created_at, status, check_in, task_count, approval_status, rejection_reason"
           )
           .eq("profile_id", user.id)
           .gte("created_at", monthStart.toISOString())
@@ -976,9 +986,20 @@ export default function DashboardPage() {
   let myLateCount = 0;
   let mySickCount = 0;
   let myLeaveCount = 0;
+  let myRejectedCount = 0;
 
-  // Hitung status yang benar-benar tercatat di database.
+  // Hitung status absensi.
+  //
+  // PENTING:
+  // Jika approval_status = rejected, record tersebut TIDAK BOLEH
+  // masuk ke Present maupun Late. Record rejected hanya dihitung
+  // sebagai ALPA / TIDAK MASUK.
   myAttendanceHistory.forEach((att) => {
+    if (att.approval_status === "rejected") {
+      myRejectedCount++;
+      return;
+    }
+
     if (att.status === "present") {
       myPresentCount++;
     }
@@ -1072,7 +1093,8 @@ export default function DashboardPage() {
     0
   );
 
-  let myAbsentCount = 0;
+  // Absensi yang ditolak langsung dihitung sebagai Alpa.
+  let myAbsentCount = myRejectedCount;
 
   const checkDate = new Date(absenceStartDate);
 
@@ -1108,6 +1130,7 @@ export default function DashboardPage() {
     );
   }
 
+  // Total masuk hanya berasal dari absensi yang tidak ditolak.
   const myTotalMasuk =
     myPresentCount +
     myLateCount;
@@ -1121,6 +1144,7 @@ export default function DashboardPage() {
       .filter(
         (item) =>
           item.check_in &&
+          item.approval_status !== "rejected" &&
           (
             item.status ===
               "present" ||
@@ -1177,6 +1201,7 @@ export default function DashboardPage() {
     .filter(
       (item) =>
         item.check_in &&
+        item.approval_status !== "rejected" &&
         typeof item.task_count === "number" &&
         item.task_count > 0
     )
@@ -1288,7 +1313,8 @@ export default function DashboardPage() {
   const isAttendanceDone =
     hasCheckedOut ||
     todayStatus === "sakit" ||
-    todayStatus === "izin";
+    todayStatus === "izin" ||
+    todayApprovalStatus === "rejected";
 
   const statusLabel =
     todayStatus === "late"
@@ -1299,7 +1325,9 @@ export default function DashboardPage() {
           ? "Sakit"
           : todayStatus === "izin"
             ? "Izin"
-            : "Belum Absen";
+            : todayApprovalStatus === "rejected"
+              ? "Tidak Masuk (Ditolak)"
+              : "Belum Absen";
 
   const todayTime = myAttendanceHistory[0]?.check_in
     ? new Date(myAttendanceHistory[0].check_in).toLocaleTimeString("id-ID", {
@@ -1466,13 +1494,15 @@ export default function DashboardPage() {
               {todayStatus && (
                 <div
                   className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-black ${
-                    todayStatus === "present"
-                      ? "bg-emerald-50 text-emerald-600"
-                      : todayStatus === "late"
-                        ? "bg-amber-50 text-amber-600"
-                        : todayStatus === "sakit"
-                          ? "bg-orange-50 text-orange-600"
-                          : "bg-violet-50 text-violet-600"
+                    todayApprovalStatus === "rejected"
+                      ? "bg-red-50 text-red-600"
+                      : todayStatus === "present"
+                        ? "bg-emerald-50 text-emerald-600"
+                        : todayStatus === "late"
+                          ? "bg-amber-50 text-amber-600"
+                          : todayStatus === "sakit"
+                            ? "bg-orange-50 text-orange-600"
+                            : "bg-violet-50 text-violet-600"
                   }`}
                 >
                   <span className="h-1.5 w-1.5 rounded-full bg-current" />
@@ -1496,29 +1526,55 @@ export default function DashboardPage() {
             ) : hasCheckedIn && isAttendanceDone ? (
               <div
                 className={`relative overflow-hidden rounded-[26px] border p-7 ${
-                  todayStatus === "sakit"
-                    ? "border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50"
-                    : todayStatus === "izin"
-                      ? "border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50"
-                      : "border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50"
+                  todayApprovalStatus === "rejected"
+                    ? "border-red-100 bg-gradient-to-br from-red-50 to-rose-50"
+                    : todayStatus === "sakit"
+                      ? "border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50"
+                      : todayStatus === "izin"
+                        ? "border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50"
+                        : "border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50"
                 }`}
               >
                 <div className="flex flex-col items-center text-center">
                   <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm">
-                    {todayStatus === "sakit" ? "🤒" : todayStatus === "izin" ? "📝" : "✓"}
+                    {todayApprovalStatus === "rejected"
+                      ? "✕"
+                      : todayStatus === "sakit"
+                        ? "🤒"
+                        : todayStatus === "izin"
+                          ? "📝"
+                          : "✓"}
                   </div>
                   <h3 className="text-xl font-black text-slate-900">
-                    {todayStatus === "sakit"
-                      ? "Semoga lekas sembuh!"
-                      : todayStatus === "izin"
-                        ? "Pengajuan Izin Tercatat"
-                        : "Absensi hari ini selesai!"}
+                    {todayApprovalStatus === "rejected"
+                      ? "Absensi Ditolak — Dianggap Tidak Masuk"
+                      : todayStatus === "sakit"
+                        ? "Semoga lekas sembuh!"
+                        : todayStatus === "izin"
+                          ? "Pengajuan Izin Tercatat"
+                          : "Absensi hari ini selesai!"}
                   </h3>
                   <p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">
-                    {todayStatus === "sakit" || todayStatus === "izin"
-                      ? `Data ketidakhadiran dengan alasan ${todayStatus} telah terkirim dan menunggu proses HRD.`
-                      : "Terima kasih sudah menyelesaikan absensi. Semoga harimu berjalan dengan lancar!"}
+                    {todayApprovalStatus === "rejected"
+                      ? "Pengajuan/absensi kamu telah ditolak oleh Admin/Owner sehingga hari ini dihitung sebagai tidak masuk (Alpa)."
+                      : todayStatus === "sakit" || todayStatus === "izin"
+                        ? `Data ketidakhadiran dengan alasan ${todayStatus} telah terkirim dan menunggu proses HRD.`
+                        : "Terima kasih sudah menyelesaikan absensi. Semoga harimu berjalan dengan lancar!"}
                   </p>
+
+                  {todayApprovalStatus === "rejected" && (
+                    <div className="mx-auto mt-5 w-full max-w-lg rounded-2xl border border-red-200 bg-white/80 p-4 text-left shadow-sm">
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-500">
+                        Alasan Penolakan
+                      </p>
+                      <p className="mt-2 text-sm font-semibold leading-6 text-red-700">
+                        {todayRejectionReason || "Tidak ada alasan yang diberikan."}
+                      </p>
+                      <div className="mt-3 rounded-xl bg-red-50 px-3 py-2.5 text-[11px] font-bold text-red-600">
+                        Status akhir hari ini: <span className="font-black">ALPA / TIDAK MASUK</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* -----------------------------------------------
@@ -1835,7 +1891,7 @@ export default function DashboardPage() {
             <StatCard label="Total Masuk" value={myTotalMasuk} caption="Hari" tone="blue" icon="↗" />
             <StatCard label="Tepat Waktu" value={myPresentCount} caption="Hari" tone="green" icon="✓" />
             <StatCard label="Terlambat" value={myLateCount} caption="Hari" tone="orange" icon="◷" />
-            <StatCard label="Sakit / Izin" value={mySickCount + myLeaveCount} caption="Hari" tone="purple" icon="✦" />
+            <StatCard label="Alpa / Ditolak" value={myAbsentCount} caption="Hari" tone="red" icon="!" />
           </div>
         </section>
 
@@ -1883,7 +1939,7 @@ export default function DashboardPage() {
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-red-500 shadow-sm">!</span>
                   <div>
                     <p className="text-xs font-black text-slate-800">Alpa</p>
-                    <p className="text-[10px] text-slate-400">Hari kerja tanpa catatan kehadiran</p>
+                    <p className="text-[10px] text-slate-400">Termasuk absensi yang ditolak</p>
                   </div>
                 </div>
                 <p className="text-2xl font-black text-red-500">{myAbsentCount}</p>

@@ -20,6 +20,8 @@ interface Attendance {
   check_in: string | null;
   check_out: string | null;
   reason: string | null;
+  approval_status: "pending" | "approved" | "rejected" | string | null;
+  rejection_reason: string | null;
 }
 
 const MONTHS = [
@@ -191,7 +193,7 @@ export default function EmployeeAttendanceDetail() {
         await supabase
           .from("attendance")
           .select(
-            "id, profile_id, status, created_at, check_in, check_out, reason"
+            "id, profile_id, status, created_at, check_in, check_out, reason, approval_status, rejection_reason"
           )
           .eq(
             "profile_id",
@@ -306,30 +308,45 @@ export default function EmployeeAttendanceDetail() {
    * ====================================
    */
   const stats = useMemo(() => {
+    const validAttendance = attendance.filter(
+      (item) => item.approval_status !== "rejected"
+    );
+
+    const presentCount = validAttendance.filter(
+      (item) => item.status === "present"
+    ).length;
+
+    const lateCount = validAttendance.filter(
+      (item) => item.status === "late"
+    ).length;
+
     return {
-      present: attendance.filter(
-        (item) =>
-          item.status === "present"
-      ).length,
+      // PRESENT + LATE yang tidak rejected = HADIR
+      // Jadi telat tetap masuk total HADIR, baik approved maupun pending.
+      present: presentCount + lateCount,
 
-      late: attendance.filter(
-        (item) =>
-          item.status === "late"
-      ).length,
+      // LATE yang tidak rejected = HADIR + TERLAMBAT
+      late: lateCount,
 
-      sick: attendance.filter(
+      sick: validAttendance.filter(
         (item) =>
           item.status === "sakit"
       ).length,
 
-      leave: attendance.filter(
+      leave: validAttendance.filter(
         (item) =>
           item.status === "izin"
       ).length,
 
-      absent: attendance.filter(
+      absent: validAttendance.filter(
         (item) =>
           item.status === "absent"
+      ).length,
+
+      // PRESENT/LATE + REJECTED = DITOLAK saja
+      rejected: attendance.filter(
+        (item) =>
+          item.approval_status === "rejected"
       ).length,
     };
   }, [attendance]);
@@ -616,7 +633,7 @@ export default function EmployeeAttendanceDetail() {
         {/* ====================================
             STATS
         ==================================== */}
-        <section className="mb-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <section className="mb-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <DetailStat
             icon="✅"
             label="Hadir"
@@ -629,6 +646,13 @@ export default function EmployeeAttendanceDetail() {
             label="Telat"
             value={stats.late}
             className="text-yellow-600 bg-yellow-50"
+          />
+
+          <DetailStat
+            icon="✕"
+            label="Ditolak"
+            value={stats.rejected}
+            className="text-red-600 bg-red-50"
           />
 
           <DetailStat
@@ -796,41 +820,62 @@ function AttendanceRow({
     value: string | null
   ) => string;
 }) {
-  const statusConfig =
-    item.status === "present"
-      ? {
-          label: "Hadir",
-          icon: "✓",
-          className:
-            "bg-emerald-50 text-emerald-600 border-emerald-100",
-        }
-      : item.status === "late"
-      ? {
-          label: "Terlambat",
-          icon: "⏰",
-          className:
-            "bg-yellow-50 text-yellow-600 border-yellow-100",
-        }
-      : item.status === "sakit"
-      ? {
-          label: "Sakit",
-          icon: "🤒",
-          className:
-            "bg-orange-50 text-orange-600 border-orange-100",
-        }
-      : item.status === "izin"
-      ? {
-          label: "Izin",
-          icon: "📝",
-          className:
-            "bg-purple-50 text-purple-600 border-purple-100",
-        }
-      : {
-          label: item.status,
-          icon: "•",
-          className:
-            "bg-slate-50 text-slate-600 border-slate-200",
-        };
+  /*
+   * RULE ABSENSI:
+   * - present + approved  -> HADIR
+   * - present + pending   -> HADIR
+   * - late + approved     -> HADIR + TERLAMBAT dan dihitung HADIR
+   * - late + pending      -> HADIR + TERLAMBAT dan dihitung HADIR
+   * - present + rejected  -> DITOLAK saja
+   * - late + rejected     -> DITOLAK saja
+   *
+   * Jadi approval "rejected" selalu menjadi prioritas
+   * dan status hadir/telat tidak ditampilkan lagi.
+   */
+  const isRejected =
+    item.approval_status === "rejected";
+
+  const statusConfig = isRejected
+    ? {
+        label: "Ditolak",
+        icon: "✕",
+        className:
+          "bg-red-50 text-red-600 border-red-100",
+      }
+    : item.status === "present"
+    ? {
+        label: "Hadir",
+        icon: "✓",
+        className:
+          "bg-emerald-50 text-emerald-600 border-emerald-100",
+      }
+    : item.status === "late"
+    ? {
+        label: "Hadir + Terlambat",
+        icon: "⏰",
+        className:
+          "bg-yellow-50 text-yellow-600 border-yellow-100",
+      }
+    : item.status === "sakit"
+    ? {
+        label: "Sakit",
+        icon: "🤒",
+        className:
+          "bg-orange-50 text-orange-600 border-orange-100",
+      }
+    : item.status === "izin"
+    ? {
+        label: "Izin",
+        icon: "📝",
+        className:
+          "bg-purple-50 text-purple-600 border-purple-100",
+      }
+    : {
+        label: item.status,
+        icon: "•",
+        className:
+          "bg-slate-50 text-slate-600 border-slate-200",
+      };
 
   return (
     <div className="group px-5 py-5 transition hover:bg-slate-50/70 sm:px-7">
@@ -893,13 +938,42 @@ function AttendanceRow({
               </div>
             </div>
 
-            <span
-              className={`inline-flex w-fit items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${statusConfig.className}`}
-            >
-              {statusConfig.icon}
-              {statusConfig.label}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex w-fit items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${statusConfig.className}`}
+              >
+                {statusConfig.icon}
+                {statusConfig.label}
+              </span>
+
+              {!isRejected && (
+                <span
+                  className={`inline-flex w-fit items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider ${
+                    item.approval_status === "approved"
+                      ? "border-emerald-100 bg-emerald-50 text-emerald-600"
+                      : "border-amber-100 bg-amber-50 text-amber-600"
+                  }`}
+                >
+                  {item.approval_status === "approved"
+                    ? "✓ Approved"
+                    : "• Pending"}
+                </span>
+              )}
+            </div>
           </div>
+
+          {item.approval_status === "rejected" &&
+            item.rejection_reason && (
+              <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3">
+                <p className="text-[9px] font-black uppercase tracking-widest text-red-500">
+                  Alasan Admin
+                </p>
+
+                <p className="mt-1 text-xs font-medium italic leading-5 text-red-700">
+                  "{item.rejection_reason}"
+                </p>
+              </div>
+            )}
 
           {item.reason && (
             <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3">

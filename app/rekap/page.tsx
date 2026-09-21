@@ -24,6 +24,8 @@ interface Attendance {
   check_in: string | null;
   check_out: string | null;
   reason: string | null;
+  approval_status: "pending" | "approved" | "rejected" | string | null;
+  rejection_reason: string | null;
 }
 
 interface Holiday {
@@ -43,7 +45,10 @@ interface EmployeeSummary {
   sick: number;
   leave: number;
   absent: number;
+  rejected: number;
+  rejectionReasons: string[];
 
+  // Total masuk = Hadir + Terlambat yang tidak ditolak
   totalAttendances: number;
 
   activeDays: number;
@@ -430,7 +435,9 @@ export default function MonthlyReportPage() {
                 created_at,
                 check_in,
                 check_out,
-                reason
+                reason,
+                approval_status,
+                rejection_reason
               `
               )
               .in(
@@ -843,6 +850,8 @@ export default function MonthlyReportPage() {
             let late = 0;
             let sick = 0;
             let leave = 0;
+            let rejected = 0;
+            const rejectionReasons: string[] = [];
 
             employeeAttendances.forEach(
               (attendance) => {
@@ -864,6 +873,26 @@ export default function MonthlyReportPage() {
                   dateKey <
                   createdDateKey
                 ) {
+                  return;
+                }
+
+                // Absensi yang ditolak Admin tidak dihitung
+                // sebagai Hadir, Terlambat, Izin, maupun Sakit.
+                if (
+                  attendance.approval_status ===
+                  "rejected"
+                ) {
+                  rejected++;
+
+                  const reason =
+                    attendance.rejection_reason?.trim();
+
+                  if (reason) {
+                    rejectionReasons.push(
+                      reason
+                    );
+                  }
+
                   return;
                 }
 
@@ -951,6 +980,8 @@ export default function MonthlyReportPage() {
                TOTAL ATTENDANCE
             ========================================== */
 
+            // Terlambat tetap dihitung sebagai hadir.
+            // Karena itu Total Masuk = Hadir + Terlambat.
             const totalAttendances =
               present + late;
 
@@ -980,12 +1011,21 @@ export default function MonthlyReportPage() {
                       day.key
                     ) || [];
 
+                  // Record yang ditolak Admin dianggap tidak valid
+                  // untuk perhitungan kehadiran harian.
+                  const validRecords =
+                    records.filter(
+                      (record) =>
+                        record.approval_status !==
+                        "rejected"
+                    );
+
                   /**
-                   * Tidak ada record
+                   * Tidak ada record valid
                    * = ALPA
                    */
                   if (
-                    records.length ===
+                    validRecords.length ===
                     0
                   ) {
                     absent++;
@@ -996,7 +1036,7 @@ export default function MonthlyReportPage() {
                    * SAKIT
                    */
                   const hasSick =
-                    records.some(
+                    validRecords.some(
                       (record) =>
                         record.status ===
                         "sakit"
@@ -1010,7 +1050,7 @@ export default function MonthlyReportPage() {
                    * IZIN
                    */
                   const hasLeave =
-                    records.some(
+                    validRecords.some(
                       (record) =>
                         record.status ===
                         "izin"
@@ -1024,7 +1064,7 @@ export default function MonthlyReportPage() {
                    * HADIR / TELAT
                    */
                   const hasPresent =
-                    records.some(
+                    validRecords.some(
                       (record) =>
                         record.status ===
                           "present" ||
@@ -1040,7 +1080,7 @@ export default function MonthlyReportPage() {
                    * EXPLICIT ABSENT
                    */
                   const hasExplicitAbsent =
-                    records.some(
+                    validRecords.some(
                       (record) =>
                         record.status ===
                         "absent"
@@ -1079,6 +1119,12 @@ export default function MonthlyReportPage() {
               sick,
               leave,
               absent,
+              rejected,
+              rejectionReasons: [
+                ...new Set(
+                  rejectionReasons
+                ),
+              ],
 
               totalAttendances,
 
@@ -1236,6 +1282,14 @@ export default function MonthlyReportPage() {
             (total, employee) =>
               total +
               employee.absent,
+            0
+          ),
+
+        rejected:
+          activeEmployees.reduce(
+            (total, employee) =>
+              total +
+              employee.rejected,
             0
           ),
 
@@ -1571,7 +1625,7 @@ export default function MonthlyReportPage() {
             STATS
         ================================================== */}
 
-        <section className="mb-5 grid grid-cols-2 gap-2.5 sm:mb-7 sm:grid-cols-3 sm:gap-3 lg:grid-cols-6">
+        <section className="mb-5 grid grid-cols-2 gap-2.5 sm:mb-7 sm:grid-cols-3 sm:gap-3 lg:grid-cols-7">
           <StatCard
             icon="👥"
             label="Karyawan"
@@ -1617,14 +1671,14 @@ export default function MonthlyReportPage() {
           />
 
           <StatCard
-            icon="🚨"
-            label="Total Alpa"
+            icon="⛔"
+            label="Ditolak"
             value={
-              companyStats.absent
+              companyStats.rejected
             }
-            badge="Perhatian"
-            valueClass="text-red-600"
-            badgeClass="bg-red-50 text-red-600"
+            badge="Admin"
+            valueClass="text-rose-600"
+            badgeClass="bg-rose-50 text-rose-600"
           />
 
           <StatCard
@@ -1990,7 +2044,48 @@ export default function MonthlyReportPage() {
                               }
                               className="bg-purple-50 text-purple-600"
                             />
+
+                            <MiniStat
+                              label="Ditolak"
+                              value={
+                                employee.rejected
+                              }
+                              className="bg-rose-50 text-rose-600"
+                            />
                           </div>
+
+                          {employee.rejected > 0 && (
+                            <div className="mt-3 rounded-2xl border border-rose-100 bg-rose-50 p-3.5">
+                              <p className="text-[8px] font-black uppercase tracking-widest text-rose-400 sm:text-[9px]">
+                                Alasan Admin
+                              </p>
+
+                              <div className="mt-2 space-y-1.5">
+                                {employee.rejectionReasons
+                                  .slice(0, 3)
+                                  .map((reason, reasonIndex) => (
+                                    <p
+                                      key={`${employee.id}-rejection-${reasonIndex}`}
+                                      className="text-[10px] font-semibold leading-5 text-rose-700 sm:text-xs"
+                                    >
+                                      • {reason}
+                                    </p>
+                                  ))}
+
+                                {employee.rejectionReasons.length === 0 && (
+                                  <p className="text-[10px] font-medium text-rose-500">
+                                    Admin menolak absensi tanpa menuliskan alasan.
+                                  </p>
+                                )}
+
+                                {employee.rejectionReasons.length > 3 && (
+                                  <p className="pt-1 text-[9px] font-bold text-rose-400">
+                                    +{employee.rejectionReasons.length - 3} alasan lainnya
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </>
                       )}
 
@@ -2028,6 +2123,10 @@ export default function MonthlyReportPage() {
 
                       <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-yellow-500">
                         Telat
+                      </th>
+
+                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-rose-500">
+                        Ditolak
                       </th>
 
                       <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-orange-500">
@@ -2154,6 +2253,53 @@ export default function MonthlyReportPage() {
                                 }
                                 className="border-yellow-100 bg-yellow-50 text-yellow-600"
                               />
+                            )}
+                          </td>
+
+                          {/* DITOLAK */}
+
+                          <td className="px-3 py-5 text-center">
+                            {employee.monthNotStarted ||
+                            employee.accountAfterMonth ? (
+                              <StatusBadge>
+                                —
+                              </StatusBadge>
+                            ) : (
+                              <div className="group/rejected relative inline-flex flex-col items-center">
+                                <NumberBadge
+                                  value={
+                                    employee.rejected
+                                  }
+                                  className="border-rose-100 bg-rose-50 text-rose-600"
+                                />
+
+                                {employee.rejected > 0 && (
+                                  <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-72 -translate-x-1/2 rounded-2xl border border-rose-100 bg-white p-3 text-left shadow-2xl group-hover/rejected:block">
+                                    <p className="text-[9px] font-black uppercase tracking-widest text-rose-400">
+                                      Alasan Admin
+                                    </p>
+
+                                    <div className="mt-2 space-y-1.5">
+                                      {employee.rejectionReasons
+                                        .slice(0, 3)
+                                        .map((reason, reasonIndex) => (
+                                          <p
+                                            key={`${employee.id}-desktop-rejection-${reasonIndex}`}
+                                            className="text-[10px] font-semibold leading-5 text-slate-600"
+                                          >
+                                            • {reason}
+                                          </p>
+                                        ))}
+
+                                      {employee.rejectionReasons.length === 0 && (
+                                        <p className="text-[10px] font-medium text-slate-500">
+                                          Tidak ada alasan yang ditulis Admin.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </td>
 
@@ -2338,6 +2484,10 @@ export default function MonthlyReportPage() {
             Total Masuk = Hadir + Telat
           </span>
 
+          <span className="rounded-full bg-rose-50 px-2.5 py-1.5 text-rose-600">
+            Ditolak = Tidak dihitung sebagai Hadir
+          </span>
+
           <span className="rounded-full bg-indigo-50 px-2.5 py-1.5 text-indigo-600">
             Hari Kerja = Senin–Jumat
           </span>
@@ -2394,6 +2544,11 @@ export default function MonthlyReportPage() {
               <p className="text-xs">
                 Total Alpa:{" "}
                 {companyStats.absent}
+              </p>
+
+              <p className="text-xs">
+                Total Ditolak:{" "}
+                {companyStats.rejected}
               </p>
             </div>
           </div>
