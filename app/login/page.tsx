@@ -19,7 +19,94 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+
+  // =========================================================
+  // CEK SESSION YANG SUDAH TERSIMPAN
+  // =========================================================
+  // Supabase Auth menyimpan session di browser. Jadi user yang
+  // masih login tidak perlu memasukkan email/password lagi.
+  useEffect(() => {
+    let mounted = true;
+
+    const checkExistingSession = async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!mounted) return;
+
+        if (!session?.user) {
+          setCheckingSession(false);
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", session.user.id)
+          .single();
+
+        if (!mounted) return;
+
+        if (profileError || !profile?.role) {
+          // Session ada tetapi profil/role tidak ditemukan.
+          // Jangan membuat user terjebak di loading.
+          setCheckingSession(false);
+          return;
+        }
+
+        router.replace(getDashboardPath(profile.role));
+      } catch (error) {
+        console.error("CHECK SESSION ERROR:", error);
+
+        if (mounted) {
+          setCheckingSession(false);
+        }
+      }
+    };
+
+    checkExistingSession();
+
+    return () => {
+      mounted = false;
+    };
+  }, [router]);
+
+  // =========================================================
+  // MONITOR PERUBAHAN SESSION
+  // =========================================================
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === "SIGNED_OUT") {
+        setCheckingSession(false);
+        return;
+      }
+
+      if (
+        (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") &&
+        session?.user
+      ) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", session.user.id)
+          .single();
+
+        if (profile?.role) {
+          router.replace(getDashboardPath(profile.role));
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
 
   // THEME
   const [darkMode, setDarkMode] = useState(false);
@@ -111,9 +198,9 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace(
-        getDashboardPath(profile.role)
-      );
+      setCheckingSession(false);
+
+      router.replace(getDashboardPath(profile.role));
     } catch (error) {
       console.error("LOGIN ERROR:", error);
 
@@ -132,6 +219,62 @@ export default function LoginPage() {
   const toggleTheme = () => {
     setDarkMode((current) => !current);
   };
+
+  if (checkingSession) {
+    return (
+      <>
+        <style jsx global>{`
+          html {
+            scroll-behavior: smooth;
+          }
+
+          body {
+            margin: 0;
+            overflow-x: hidden;
+          }
+
+          * {
+            box-sizing: border-box;
+          }
+        `}</style>
+
+        <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
+          <div className="text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-lg ring-1 ring-slate-200">
+              <svg
+                className="h-6 w-6 animate-spin text-blue-600"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-20"
+                  cx="12"
+                  cy="12"
+                  r="9"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                />
+                <path
+                  className="opacity-90"
+                  fill="currentColor"
+                  d="M21 12a9 9 0 00-9-9v3a6 6 0 016 6h3z"
+                />
+              </svg>
+            </div>
+
+            <p className="mt-4 text-sm font-bold text-slate-700">
+              Memeriksa sesi login...
+            </p>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Mohon tunggu sebentar
+            </p>
+          </div>
+        </main>
+      </>
+    );
+  }
 
   return (
     <>
@@ -608,11 +751,21 @@ export default function LoginPage() {
                   >
                     <input
                       type="checkbox"
+                      checked
+                      readOnly
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
 
-                    Remember me
+                    Tetap masuk di perangkat ini
                   </label>
+
+                  <span
+                    className={`text-right text-[10px] leading-4 ${
+                      darkMode ? "text-slate-500" : "text-slate-400"
+                    }`}
+                  >
+                    Sesi tetap aktif sampai Anda logout
+                  </span>
 
                   <Link
                     href="#"

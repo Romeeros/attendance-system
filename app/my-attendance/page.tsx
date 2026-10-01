@@ -21,6 +21,8 @@ interface Attendance {
   reason: string | null;
   approval_status: "pending" | "approved" | "rejected" | null;
   rejection_reason: string | null;
+  task_list: string[] | null;
+  task_count: number | null;
 }
 
 interface MonthOption {
@@ -48,6 +50,10 @@ export default function MyAttendancePage() {
   const [selectedMonth, setSelectedMonth] = useState("");
   const [filter, setFilter] = useState<FilterStatus>("all");
   const [search, setSearch] = useState("");
+
+  // Absensi yang sedang dibuka pada popup laporan pekerjaan
+  const [selectedTaskAttendance, setSelectedTaskAttendance] =
+    useState<Attendance | null>(null);
 
   // ============================================================
   // FETCH DATA
@@ -86,7 +92,7 @@ export default function MyAttendancePage() {
           await supabase
             .from("attendance")
             .select(
-              "id, profile_id, created_at, check_in, check_out, status, reason, approval_status, rejection_reason"
+              "id, profile_id, created_at, check_in, check_out, status, reason, approval_status, rejection_reason, task_list, task_count"
             )
             .eq("profile_id", user.id)
             .order("created_at", { ascending: false });
@@ -839,7 +845,6 @@ export default function MyAttendancePage() {
             iconClass="bg-red-50 text-red-600"
           />
         </section>
-
         {/* ==================================================== */}
         {/* HISTORY */}
         {/* ==================================================== */}
@@ -996,6 +1001,10 @@ export default function MyAttendancePage() {
                         Jam Pulang
                       </th>
 
+                      <th className="min-w-[280px] px-6 py-4 text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">
+                        Pekerjaan Hari Ini
+                      </th>
+
                       <th className="whitespace-nowrap px-6 py-4 text-center text-[10px] font-black uppercase tracking-[0.15em] text-gray-400">
                         Status
                       </th>
@@ -1140,6 +1149,60 @@ export default function MyAttendancePage() {
                                 <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
                                 Belum Pulang
                               </span>
+                            )}
+                          </td>
+
+                          {/* Pekerjaan Hari Ini */}
+                          <td className="max-w-[360px] px-6 py-5">
+                            {Array.isArray(item.task_list) &&
+                            item.task_list.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedTaskAttendance(item)
+                                }
+                                className="group w-full rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 text-left transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-50 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-emerald-100"
+                              >
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <div>
+                                    <p className="text-[9px] font-black uppercase tracking-[0.12em] text-emerald-600">
+                                      Laporan Pekerjaan
+                                    </p>
+                                    <p className="mt-0.5 text-[10px] font-medium text-gray-400">
+                                      Klik untuk melihat detail
+                                    </p>
+                                  </div>
+
+                                  <span className="rounded-full bg-white px-2 py-1 text-[9px] font-black text-emerald-600 shadow-sm">
+                                    {item.task_list.length} tugas
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2">
+                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-[10px] font-black text-emerald-700">
+                                    1
+                                  </span>
+                                  <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700">
+                                    {item.task_list[0]}
+                                  </span>
+                                  {item.task_list.length > 1 && (
+                                    <span className="shrink-0 text-[10px] font-black text-emerald-600">
+                                      +{item.task_list.length - 1}
+                                    </span>
+                                  )}
+                                  <span className="text-gray-300 transition-transform group-hover:translate-x-0.5">
+                                    →
+                                  </span>
+                                </div>
+                              </button>
+                            ) : (
+                              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-2.5">
+                                <p className="text-xs font-medium text-gray-400">
+                                  {item.check_out
+                                    ? "Tidak ada laporan pekerjaan."
+                                    : "Laporan akan muncul setelah absen pulang."}
+                                </p>
+                              </div>
                             )}
                           </td>
 
@@ -1322,6 +1385,58 @@ export default function MyAttendancePage() {
                         </div>
                       </div>
 
+                      {/* Pekerjaan Hari Ini */}
+                      <div className="mt-3">
+                        {Array.isArray(item.task_list) &&
+                        item.task_list.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedTaskAttendance(item)
+                            }
+                            className="group w-full rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 text-left transition-all hover:border-emerald-200 hover:bg-emerald-50 hover:shadow-md focus:outline-none focus:ring-4 focus:ring-emerald-100"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <p className="text-[9px] font-black uppercase tracking-[0.12em] text-emerald-600">
+                                  Pekerjaan Hari Ini
+                                </p>
+                                <p className="mt-1 text-[10px] font-medium text-gray-400">
+                                  {item.task_list.length} pekerjaan tercatat ·
+                                  klik untuk melihat
+                                </p>
+                              </div>
+
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-sm text-emerald-600 shadow-sm transition-transform group-hover:translate-x-0.5">
+                                →
+                              </span>
+                            </div>
+
+                            <div className="mt-3 flex items-center gap-2 rounded-xl bg-white/80 px-3 py-2.5">
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[10px] font-black text-emerald-600">
+                                1
+                              </span>
+                              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-gray-700">
+                                {item.task_list[0]}
+                              </span>
+                              {item.task_list.length > 1 && (
+                                <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-black text-emerald-600">
+                                  +{item.task_list.length - 1}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        ) : (
+                          <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
+                            <p className="text-xs font-medium text-gray-400">
+                              {item.check_out
+                                ? "Belum ada laporan pekerjaan"
+                                : "Akan tampil setelah absen pulang"}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Reason / Rejection reason */}
                       {item.approval_status === "rejected" ? (
                         <div className="mt-3 rounded-xl border border-red-100 bg-red-50 p-3">
@@ -1401,6 +1516,175 @@ export default function MyAttendancePage() {
             </div>
           )}
         </section>
+
+        {/* ==================================================== */}
+        {/* POPUP DETAIL LAPORAN PEKERJAAN */}
+        {/* ==================================================== */}
+        {selectedTaskAttendance && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/45 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="task-report-title"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) {
+                setSelectedTaskAttendance(null);
+              }
+            }}
+          >
+            <div className="relative max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl">
+              {/* Header */}
+              <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 px-5 py-5 text-white sm:px-7 sm:py-6">
+                <div className="absolute -right-16 -top-20 h-44 w-44 rounded-full border-[28px] border-white/10" />
+                <div className="absolute -bottom-24 left-1/2 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
+
+                <div className="relative z-10 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 backdrop-blur-md">
+                      <span className="h-2 w-2 rounded-full bg-emerald-200" />
+                      <span className="text-[9px] font-black uppercase tracking-[0.16em]">
+                        Detail Laporan
+                      </span>
+                    </div>
+
+                    <h2
+                      id="task-report-title"
+                      className="text-2xl font-black tracking-tight sm:text-3xl"
+                    >
+                      Pekerjaan Hari Ini
+                    </h2>
+
+                    <p className="mt-1 text-xs font-medium text-white/75 sm:text-sm">
+                      {formatFullDate(selectedTaskAttendance.created_at)}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTaskAttendance(null)}
+                    aria-label="Tutup popup"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-xl font-light text-white transition hover:bg-white/20"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="max-h-[calc(88vh-150px)] overflow-y-auto p-5 sm:p-7">
+                <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-blue-400">
+                      Jam Masuk
+                    </p>
+                    <p className="mt-1 text-lg font-black text-blue-600">
+                      {formatTime(selectedTaskAttendance.check_in)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-orange-100 bg-orange-50/70 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-orange-400">
+                      Jam Pulang
+                    </p>
+                    <p className="mt-1 text-lg font-black text-orange-500">
+                      {formatTime(selectedTaskAttendance.check_out)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-emerald-500">
+                      Total Tugas
+                    </p>
+                    <p className="mt-1 text-lg font-black text-emerald-600">
+                      {Array.isArray(selectedTaskAttendance.task_list)
+                        ? selectedTaskAttendance.task_list.length
+                        : 0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                      Status
+                    </p>
+                    <p className="mt-1 truncate text-sm font-black text-gray-700">
+                      {getStatusLabel(
+                        selectedTaskAttendance.status,
+                        selectedTaskAttendance.approval_status
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 sm:p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-600">
+                        Laporan Pekerjaan
+                      </p>
+                      <p className="mt-1 text-xs text-gray-400">
+                        Pekerjaan yang kamu masukkan saat absen pulang.
+                      </p>
+                    </div>
+
+                    <span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-black text-emerald-600 shadow-sm">
+                      {Array.isArray(selectedTaskAttendance.task_list)
+                        ? selectedTaskAttendance.task_list.length
+                        : 0}{" "}
+                      tugas
+                    </span>
+                  </div>
+
+                  {Array.isArray(selectedTaskAttendance.task_list) &&
+                  selectedTaskAttendance.task_list.length > 0 ? (
+                    <ol className="space-y-2.5">
+                      {selectedTaskAttendance.task_list.map(
+                        (task, index) => (
+                          <li
+                            key={`modal-${selectedTaskAttendance.id}-${index}`}
+                            className="flex items-start gap-3 rounded-2xl border border-white bg-white/90 p-3 shadow-sm"
+                          >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-xs font-black text-emerald-700">
+                              {index + 1}
+                            </span>
+
+                            <span className="pt-1 text-sm font-semibold leading-6 text-gray-700">
+                              {task}
+                            </span>
+                          </li>
+                        )
+                      )}
+                    </ol>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-6 text-center">
+                      <p className="text-sm font-bold text-gray-500">
+                        Belum ada laporan pekerjaan.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {selectedTaskAttendance.reason && (
+                  <div className="mt-4 rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">
+                      Keterangan
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-gray-600">
+                      {selectedTaskAttendance.reason}
+                    </p>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedTaskAttendance(null)}
+                  className="mt-5 w-full rounded-2xl bg-gray-900 px-4 py-3.5 text-sm font-black text-white transition hover:bg-gray-800"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ==================================================== */}
         {/* FOOTER */}

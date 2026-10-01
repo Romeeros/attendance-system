@@ -22,6 +22,16 @@ interface Attendance {
   reason: string | null;
   approval_status: "pending" | "approved" | "rejected" | string | null;
   rejection_reason: string | null;
+
+  // Laporan pekerjaan saat absen pulang
+  task_list: string[] | null;
+  task_count: number | null;
+
+  // Lokasi saat check-in / check-out
+  latitude: number | null;
+  longitude: number | null;
+  latitude_out: number | null;
+  longitude_out: number | null;
 }
 
 const MONTHS = [
@@ -66,6 +76,10 @@ export default function EmployeeAttendanceDetail() {
 
   const [errorMessage, setErrorMessage] =
     useState("");
+
+  // Popup detail pekerjaan + lokasi
+  const [selectedAttendance, setSelectedAttendance] =
+    useState<Attendance | null>(null);
 
   /**
    * ====================================
@@ -193,7 +207,7 @@ export default function EmployeeAttendanceDetail() {
         await supabase
           .from("attendance")
           .select(
-            "id, profile_id, status, created_at, check_in, check_out, reason, approval_status, rejection_reason"
+            "id, profile_id, status, created_at, check_in, check_out, reason, approval_status, rejection_reason, task_list, task_count, latitude, longitude, latitude_out, longitude_out"
           )
           .eq(
             "profile_id",
@@ -732,12 +746,25 @@ export default function EmployeeAttendanceDetail() {
                     index={index}
                     formatDate={formatDate}
                     formatTime={formatTime}
+                    onOpenDetail={() => setSelectedAttendance(item)}
                   />
                 )
               )}
             </div>
           )}
         </section>
+
+        {/* ====================================
+            POPUP DETAIL PEKERJAAN + LOKASI
+        ==================================== */}
+        {selectedAttendance && (
+          <AttendanceDetailModal
+            item={selectedAttendance}
+            formatDate={formatDate}
+            formatTime={formatTime}
+            onClose={() => setSelectedAttendance(null)}
+          />
+        )}
       </div>
     </main>
   );
@@ -810,6 +837,7 @@ function AttendanceRow({
   index,
   formatDate,
   formatTime,
+  onOpenDetail,
 }: {
   item: Attendance;
   index: number;
@@ -819,6 +847,7 @@ function AttendanceRow({
   formatTime: (
     value: string | null
   ) => string;
+  onOpenDetail: () => void;
 }) {
   /*
    * RULE ABSENSI:
@@ -876,6 +905,23 @@ function AttendanceRow({
         className:
           "bg-slate-50 text-slate-600 border-slate-200",
       };
+
+  const taskList = Array.isArray(item.task_list)
+    ? item.task_list.filter((task) => typeof task === "string" && task.trim())
+    : [];
+
+  const taskCount =
+    typeof item.task_count === "number"
+      ? item.task_count
+      : taskList.length;
+
+  const hasLocation =
+    typeof item.latitude === "number" &&
+    typeof item.longitude === "number";
+
+  const hasCheckoutLocation =
+    typeof item.latitude_out === "number" &&
+    typeof item.longitude_out === "number";
 
   return (
     <div className="group px-5 py-5 transition hover:bg-slate-50/70 sm:px-7">
@@ -959,6 +1005,28 @@ function AttendanceRow({
                     : "• Pending"}
                 </span>
               )}
+
+              {/* Ringkasan laporan pekerjaan di samping status */}
+              {taskCount > 0 && (
+                <button
+                  type="button"
+                  onClick={onOpenDetail}
+                  className="inline-flex w-fit items-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-emerald-600 transition hover:border-emerald-200 hover:bg-emerald-100"
+                >
+                  ✓ {taskCount} Pekerjaan
+                </button>
+              )}
+
+              {/* Lokasi hanya ditampilkan jika tersedia */}
+              {(hasLocation || hasCheckoutLocation) && (
+                <button
+                  type="button"
+                  onClick={onOpenDetail}
+                  className="inline-flex w-fit items-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-blue-600 transition hover:border-blue-200 hover:bg-blue-100"
+                >
+                  ◎ Lokasi
+                </button>
+              )}
             </div>
           </div>
 
@@ -986,6 +1054,220 @@ function AttendanceRow({
               </p>
             </div>
           )}
+
+          {/* Preview kecil pekerjaan */}
+          {taskList.length > 0 && (
+            <button
+              type="button"
+              onClick={onOpenDetail}
+              className="mt-4 w-full rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-left transition hover:bg-emerald-50"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-[0.16em] text-emerald-600">
+                    Laporan pekerjaan
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-slate-700">
+                    {taskList[0]}
+                    {taskList.length > 1 ? ` + ${taskList.length - 1} lainnya` : ""}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-xl bg-white px-3 py-2 text-[10px] font-black text-emerald-600 shadow-sm">
+                  Lihat detail →
+                </span>
+              </div>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AttendanceDetailModal({
+  item,
+  formatDate,
+  formatTime,
+  onClose,
+}: {
+  item: Attendance;
+  formatDate: (value: string) => string;
+  formatTime: (value: string | null) => string;
+  onClose: () => void;
+}) {
+  const taskList = Array.isArray(item.task_list)
+    ? item.task_list.filter((task) => typeof task === "string" && task.trim())
+    : [];
+
+  const hasCheckInLocation =
+    typeof item.latitude === "number" &&
+    typeof item.longitude === "number";
+
+  const hasCheckOutLocation =
+    typeof item.latitude_out === "number" &&
+    typeof item.longitude_out === "number";
+
+  const openMap = (lat: number, lng: number) => {
+    window.open(
+      `https://www.google.com/maps?q=${lat},${lng}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 px-4 py-6 backdrop-blur-sm"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        className="max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Detail pekerjaan dan lokasi"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-5 sm:px-7">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-600">
+              Detail harian
+            </p>
+            <h3 className="mt-1 text-xl font-black text-slate-900">
+              Laporan & Lokasi
+            </h3>
+            <p className="mt-1 text-xs font-medium text-slate-400">
+              {formatDate(item.created_at)} · {formatTime(item.check_in)} → {formatTime(item.check_out)}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-lg font-black text-slate-500 transition hover:bg-slate-200 hover:text-slate-900"
+            aria-label="Tutup"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="max-h-[calc(88vh-105px)] overflow-y-auto p-5 sm:p-7">
+          <section className="rounded-3xl border border-emerald-100 bg-emerald-50/60 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-600">
+                  Pekerjaan hari ini
+                </p>
+                <h4 className="mt-1 text-lg font-black text-slate-900">
+                  {taskList.length} pekerjaan
+                </h4>
+              </div>
+
+              <span className="rounded-full bg-white px-3 py-1.5 text-[10px] font-black text-emerald-600 shadow-sm">
+                {taskList.length > 0 ? "Ada laporan" : "Tidak ada laporan"}
+              </span>
+            </div>
+
+            {taskList.length > 0 ? (
+              <div className="mt-4 space-y-2">
+                {taskList.map((task, index) => (
+                  <div
+                    key={`${item.id}-task-${index}`}
+                    className="flex gap-3 rounded-2xl border border-white bg-white px-4 py-3 shadow-sm"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-[10px] font-black text-emerald-700">
+                      {index + 1}
+                    </span>
+                    <p className="pt-1 text-sm font-semibold leading-6 text-slate-700">
+                      {task}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm font-medium text-slate-400">
+                Belum ada laporan pekerjaan pada absensi ini.
+              </p>
+            )}
+          </section>
+
+          <section className="mt-5 rounded-3xl border border-blue-100 bg-blue-50/60 p-5">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-600">
+                Lokasi absensi
+              </p>
+              <h4 className="mt-1 text-lg font-black text-slate-900">
+                Titik GPS
+              </h4>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {hasCheckInLocation ? (
+                <div className="rounded-2xl border border-white bg-white p-4 shadow-sm">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Lokasi masuk
+                  </p>
+                  <p className="mt-2 text-xs font-bold text-slate-700">
+                    {item.latitude?.toFixed(6)}, {item.longitude?.toFixed(6)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openMap(item.latitude!, item.longitude!)}
+                    className="mt-3 rounded-xl bg-blue-600 px-3 py-2 text-[10px] font-black text-white transition hover:bg-blue-700"
+                  >
+                    Buka Google Maps →
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-white p-4 text-xs font-medium text-slate-400">
+                  Lokasi masuk tidak tersedia.
+                </div>
+              )}
+
+              {hasCheckOutLocation ? (
+                <div className="rounded-2xl border border-white bg-white p-4 shadow-sm">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                    Lokasi pulang
+                  </p>
+                  <p className="mt-2 text-xs font-bold text-slate-700">
+                    {item.latitude_out?.toFixed(6)}, {item.longitude_out?.toFixed(6)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openMap(item.latitude_out!, item.longitude_out!)}
+                    className="mt-3 rounded-xl bg-blue-600 px-3 py-2 text-[10px] font-black text-white transition hover:bg-blue-700"
+                  >
+                    Buka Google Maps →
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-2xl bg-white p-4 text-xs font-medium text-slate-400">
+                  Lokasi pulang tidak tersedia.
+                </div>
+              )}
+            </div>
+          </section>
+
+          {item.reason && (
+            <section className="mt-5 rounded-3xl bg-slate-50 p-5">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                Keterangan
+              </p>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                "{item.reason}"
+              </p>
+            </section>
+          )}
+        </div>
+
+        <div className="border-t border-slate-100 bg-white px-5 py-4 sm:px-7">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white transition hover:bg-slate-800"
+          >
+            Tutup
+          </button>
         </div>
       </div>
     </div>
