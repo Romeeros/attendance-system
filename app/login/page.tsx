@@ -764,7 +764,7 @@ export default function LoginPage() {
                       darkMode ? "text-slate-500" : "text-slate-400"
                     }`}
                   >
-                    Sesi tetap aktif sampai Anda logout
+                   
                   </span>
 
                   <Link
