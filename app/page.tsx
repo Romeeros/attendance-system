@@ -933,7 +933,7 @@ export default function Home() {
       </section>
 
       {/* =========================================
-          HOW IT WORKS
+          HOW IT WORK
       ========================================== */}
 
       <section
