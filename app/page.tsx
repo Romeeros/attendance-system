@@ -1,327 +1,153 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { Bricolage_Grotesque, Plus_Jakarta_Sans } from "next/font/google";
+
+const display = Bricolage_Grotesque({
+  subsets: ["latin"],
+  variable: "--f-display",
+});
+const body = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--f-body",
+});
 
 const fitur = [
   {
-    icon: "📷",
+    key: "face",
+    span: "md:col-span-4",
     title: "Face Verification",
     desc: "Verifikasi wajah untuk memastikan identitas pengguna dengan aman.",
-    tag: "AI POWERED",
   },
   {
-    icon: "📍",
+    key: "gps",
+    span: "md:col-span-2",
     title: "Geo-Tagging GPS",
     desc: "Pastikan absensi dilakukan pada lokasi yang telah ditentukan.",
-    tag: "LOCATION",
   },
   {
-    icon: "⚡",
+    key: "approval",
+    span: "md:col-span-2",
     title: "Smart Approval",
     desc: "Kelola izin, cuti, dan lembur dengan persetujuan digital.",
-    tag: "INSTANT",
   },
   {
-    icon: "📊",
+    key: "dash",
+    span: "md:col-span-4",
     title: "Live Dashboard",
     desc: "Pantau data kehadiran melalui dashboard secara real-time.",
-    tag: "REALTIME",
   },
 ];
 
 const steps = [
-  {
-    number: "01",
-    icon: "🔐",
-    title: "Login Akun",
-    desc: "Masuk menggunakan akun yang sudah terdaftar.",
-  },
-  {
-    number: "02",
-    icon: "📷",
-    title: "Verifikasi Wajah",
-    desc: "Sistem melakukan validasi wajah secara otomatis.",
-  },
-  {
-    number: "03",
-    icon: "📍",
-    title: "Validasi GPS",
-    desc: "Lokasi perangkat diverifikasi oleh sistem.",
-  },
-  {
-    number: "04",
-    icon: "✓",
-    title: "Berhasil",
-    desc: "Data kehadiran tersimpan aman di server.",
-  },
+  { number: "1", title: "Login Akun", desc: "Masuk menggunakan akun yang sudah terdaftar." },
+  { number: "2", title: "Verifikasi Wajah", desc: "Sistem melakukan validasi wajah secara otomatis." },
+  { number: "3", title: "Validasi GPS", desc: "Lokasi perangkat diverifikasi oleh sistem." },
+  { number: "4", title: "Berhasil", desc: "Data kehadiran tersimpan aman di server." },
 ];
+
+function FeatureVisual({ k }: { k: string }) {
+  if (k === "face")
+    return (
+      <div className="relative mx-auto flex h-40 w-40 items-center justify-center">
+        <div className="absolute inset-0 animate-[spin_14s_linear_infinite] rounded-full border-2 border-dashed border-[var(--brand)] opacity-50" />
+        <div className="absolute inset-4 rounded-full border border-[var(--accent)] opacity-60" />
+        <svg viewBox="0 0 64 64" className="relative h-20 w-20 text-[var(--brand)]" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <circle cx="32" cy="24" r="10" />
+          <path d="M12 56c2-12 10-18 20-18s18 6 20 18" />
+        </svg>
+        <span className="chip absolute -right-2 bottom-3">Cocok 99.9%</span>
+      </div>
+    );
+  if (k === "gps")
+    return (
+      <div className="relative mx-auto flex h-32 w-32 items-center justify-center">
+        {[100, 70, 40].map((s) => (
+          <div key={s} className="absolute rounded-full border border-[var(--brand)] opacity-30" style={{ width: `${s}%`, height: `${s}%` }} />
+        ))}
+        <span className="absolute h-4 w-4 animate-ping rounded-full bg-[var(--accent)] opacity-70" />
+        <span className="relative h-3 w-3 rounded-full bg-[var(--accent)] shadow-[0_0_18px_var(--accent)]" />
+      </div>
+    );
+  if (k === "approval")
+    return (
+      <div className="space-y-2">
+        {[
+          ["Cuti tahunan", "Disetujui", "var(--accent)"],
+          ["Izin sakit", "Menunggu", "#f5b83d"],
+          ["Lembur Jumat", "Disetujui", "var(--accent)"],
+        ].map(([n, s, c]) => (
+          <div key={n} className="flex items-center justify-between rounded-xl bd-line bg-bg px-3 py-2 text-xs">
+            <span className="font-semibold">{n}</span>
+            <span className="flex items-center gap-1.5 c-mute">
+              <i className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />
+              {s}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  return (
+    <div className="flex h-32 items-end gap-2 sm:gap-3">
+      {[45, 70, 55, 85, 62, 92, 78].map((h, i) => (
+        <div key={i} className="flex-1 rounded-t-lg" style={{ height: `${h}%`, background: i === 5 ? "linear-gradient(to top,var(--brand),var(--accent))" : "var(--line)" }} />
+      ))}
+    </div>
+  );
+}
 
 export default function Home() {
   const [currentTime, setCurrentTime] = useState("");
   const [isScrolled, setIsScrolled] = useState(false);
   const [darkMode, setDarkMode] = useState(false);
 
-  // =========================================
-  // YOYO STATE
-  // =========================================
-  const heroRef = useRef<HTMLDivElement | null>(null);
-
-  const dragRef = useRef({
-    active: false,
-    startY: 0,
-    currentY: 0,
-  });
-
-  const [heroY, setHeroY] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-
-  // =========================================
-  // LOAD THEME
-  // =========================================
   useEffect(() => {
-    const savedTheme = localStorage.getItem("svara-theme");
-
-    if (savedTheme === "dark") {
-      setDarkMode(true);
-    } else if (savedTheme === "light") {
-      setDarkMode(false);
-    } else {
-      const prefersDark = window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches;
-
-      setDarkMode(prefersDark);
-    }
+    const saved = localStorage.getItem("svara-theme");
+    if (saved === "dark") setDarkMode(true);
+    else if (saved === "light") setDarkMode(false);
+    else setDarkMode(window.matchMedia("(prefers-color-scheme: dark)").matches);
   }, []);
 
-  // =========================================
-  // SAVE THEME
-  // =========================================
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
-
-    localStorage.setItem(
-      "svara-theme",
-      darkMode ? "dark" : "light"
-    );
+    localStorage.setItem("svara-theme", darkMode ? "dark" : "light");
   }, [darkMode]);
 
-  // =========================================
-  // REALTIME CLOCK
-  // =========================================
   useEffect(() => {
-    const updateTime = () => {
+    const updateTime = () =>
       setCurrentTime(
-        new Date().toLocaleTimeString("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })
+        new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
       );
-    };
-
     updateTime();
-
     const timer = setInterval(updateTime, 1000);
-
     return () => clearInterval(timer);
   }, []);
 
-  // =========================================
-  // NAVBAR SCROLL
-  // =========================================
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20);
-    };
-
-    window.addEventListener("scroll", handleScroll, {
-      passive: true,
-    });
-
-    return () =>
-      window.removeEventListener("scroll", handleScroll);
+    const onScroll = () => setIsScrolled(window.scrollY > 20);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // =========================================
-  // YOYO - DRAG START
-  // =========================================
-  const handlePointerDown = (
-    e: React.PointerEvent<HTMLDivElement>
-  ) => {
-    if (!heroRef.current) return;
-
-    e.preventDefault();
-
-    heroRef.current.setPointerCapture(e.pointerId);
-
-    dragRef.current.active = true;
-    dragRef.current.startY = e.clientY;
-    dragRef.current.currentY = 0;
-
-    setIsDragging(true);
-  };
-
-  // =========================================
-  // YOYO - DRAG MOVE
-  // =========================================
-  const handlePointerMove = (
-    e: React.PointerEvent<HTMLDivElement>
-  ) => {
-    if (!dragRef.current.active) return;
-
-    const rawDistance =
-      e.clientY - dragRef.current.startY;
-
-    /*
-      Maksimal tarikan sekitar 170px.
-    */
-    const maxDistance = 170;
-
-    const limitedDistance = Math.max(
-      -maxDistance,
-      Math.min(maxDistance, rawDistance)
-    );
-
-    /*
-      Efek karet / resistance.
-    */
-    const resistance =
-      limitedDistance * 0.72;
-
-    dragRef.current.currentY = resistance;
-
-    setHeroY(resistance);
-  };
-
-  // =========================================
-  // YOYO - RELEASE
-  // =========================================
-  const releaseYoyo = () => {
-    if (!dragRef.current.active) return;
-
-    dragRef.current.active = false;
-
-    setIsDragging(false);
-
-    /*
-      Kembali ke posisi awal.
-      CSS spring akan membuat efek pantulan.
-    */
-    setHeroY(0);
-  };
-
-  // =========================================
-  // YOYO - POINTER UP
-  // =========================================
-  const handlePointerUp = (
-    e: React.PointerEvent<HTMLDivElement>
-  ) => {
-    if (heroRef.current) {
-      try {
-        heroRef.current.releasePointerCapture(
-          e.pointerId
-        );
-      } catch {
-        // Pointer capture mungkin sudah dilepas
-      }
-    }
-
-    releaseYoyo();
-  };
-
-  // =========================================
-  // YOYO - POINTER CANCEL
-  // =========================================
-  const handlePointerCancel = () => {
-    releaseYoyo();
-  };
-
-  // =========================================
-  // YOYO ROPE POSITION
-  // =========================================
-
-  /*
-    Posisi awal atas kartu gambar:
-    128px
-
-    Posisi anchor:
-    36px
-
-    Jadi panjang tali awal:
-    128 - 36 = 92px
-
-    Saat gambar bergerak:
-    heroY akan mengubah posisi kartu.
-  */
-
-  const imageTop = 128 + heroY;
-  const ropeTop = Math.min(36, imageTop);
-  const ropeHeight = Math.max(
-    4,
-    Math.abs(imageTop - 36)
-  );
-
   return (
-    <main
-      className={`min-h-screen overflow-x-hidden transition-colors duration-500 ${
-        darkMode
-          ? "bg-[#050816] text-white"
-          : "bg-[#f8fafc] text-slate-900"
-      }`}
-    >
-      {/* =========================================
-          BACKGROUND GLOW
-      ========================================== */}
-
+    <main className={`${display.variable} ${body.variable} app min-h-screen overflow-x-hidden`}>
+      {/* BACKGROUND */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div
-          className={`absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full blur-3xl transition-opacity duration-500 ${
-            darkMode
-              ? "bg-blue-600/20"
-              : "bg-blue-400/20"
-          }`}
-        />
-
-        <div
-          className={`absolute -right-40 top-[25%] h-[500px] w-[500px] rounded-full blur-3xl transition-opacity duration-500 ${
-            darkMode
-              ? "bg-purple-600/20"
-              : "bg-purple-400/15"
-          }`}
-        />
-
-        <div
-          className={`absolute bottom-[-200px] left-[35%] h-[450px] w-[450px] rounded-full blur-3xl ${
-            darkMode
-              ? "bg-cyan-500/10"
-              : "bg-cyan-400/10"
-          }`}
-        />
+        <div className="absolute -left-40 -top-40 h-[520px] w-[520px] rounded-full bg-[var(--brand)] opacity-[0.16] blur-3xl" />
+        <div className="absolute -right-40 top-[28%] h-[480px] w-[480px] rounded-full bg-[var(--accent)] opacity-[0.12] blur-3xl" />
+        <div className="grid-bg absolute inset-0" />
       </div>
 
-      {/* =========================================
-          NAVBAR
-      ========================================== */}
-
+      {/* NAVBAR */}
       <nav
-        className={`fixed left-0 right-0 top-0 z-50 transition-all duration-300 ${
-          isScrolled
-            ? darkMode
-              ? "border-b border-white/10 bg-[#050816]/75 shadow-2xl shadow-black/20 backdrop-blur-2xl"
-              : "border-b border-slate-200/70 bg-white/75 shadow-lg shadow-slate-200/20 backdrop-blur-2xl"
-            : "border-transparent bg-transparent"
+        className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+          isScrolled ? "nav-solid" : "border-b border-transparent"
         }`}
       >
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:h-20 sm:px-6 lg:px-8">
-          {/* LOGO */}
-
-          <Link
-            href="/"
-            className="group flex items-center"
-          >
+          <Link href="/" className="group flex items-center">
             <Image
               src="/svara.png"
               alt="SVARA Innovation Logo"
@@ -332,483 +158,120 @@ export default function Home() {
             />
           </Link>
 
-          {/* RIGHT */}
-
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* CLOCK */}
-
-            <div
-              className={`hidden items-center gap-2 rounded-full border px-3 py-2 backdrop-blur-xl sm:flex ${
-                darkMode
-                  ? "border-white/10 bg-white/5"
-                  : "border-slate-200 bg-white/70"
-              }`}
-            >
+            <div className="glass hidden items-center gap-2 rounded-full px-3.5 py-2 sm:flex">
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent)] opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent)]" />
               </span>
-
-              <span
-                className={`font-mono text-xs font-bold ${
-                  darkMode
-                    ? "text-blue-300"
-                    : "text-blue-700"
-                }`}
-              >
-                {currentTime || "--:--:--"}
-              </span>
-
-              <span
-                className={`text-[9px] font-bold ${
-                  darkMode
-                    ? "text-slate-500"
-                    : "text-slate-400"
-                }`}
-              >
-                WIB
-              </span>
+              <span className="font-mono text-xs font-bold tabular-nums c-brand">{currentTime || "--:--:--"}</span>
+              <span className="text-[10px] font-bold c-mute">WIB</span>
             </div>
-
-            {/* THEME TOGGLE */}
 
             <button
               type="button"
-              onClick={() =>
-                setDarkMode((prev) => !prev)
-              }
-              aria-label="Toggle theme"
-              className={`group relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border transition-all duration-300 hover:scale-105 ${
-                darkMode
-                  ? "border-white/10 bg-white/5 hover:bg-white/10"
-                  : "border-slate-200 bg-white/80 hover:bg-slate-50"
-              }`}
+              onClick={() => setDarkMode((p) => !p)}
+              aria-label="Ganti tema"
+              className="glass relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-full transition hover:scale-105"
             >
-              <span
-                className={`absolute transition-all duration-500 ${
-                  darkMode
-                    ? "rotate-0 scale-100 opacity-100"
-                    : "rotate-90 scale-0 opacity-0"
-                }`}
-              >
-                🌙
-              </span>
-
-              <span
-                className={`absolute transition-all duration-500 ${
-                  darkMode
-                    ? "-rotate-90 scale-0 opacity-0"
-                    : "rotate-0 scale-100 opacity-100"
-                }`}
-              >
-                ☀️
-              </span>
+              <span className={`absolute transition-all duration-500 ${darkMode ? "scale-100 rotate-0 opacity-100" : "scale-0 rotate-90 opacity-0"}`}>🌙</span>
+              <span className={`absolute transition-all duration-500 ${darkMode ? "scale-0 -rotate-90 opacity-0" : "scale-100 rotate-0 opacity-100"}`}>☀️</span>
             </button>
 
-            {/* LOGIN */}
-
-            <Link
-              href="/login"
-              className="group relative overflow-hidden rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-blue-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-blue-600/40 sm:px-6 sm:py-2.5 sm:text-sm"
-            >
-              <span className="relative z-10">
-                Login
-              </span>
-
-              <span className="absolute inset-0 -translate-x-full bg-white/20 transition-transform duration-500 group-hover:translate-x-0" />
+            <Link href="/login" className="btn-primary px-5 py-2.5 text-xs sm:px-6 sm:text-sm">
+              Login
             </Link>
           </div>
         </div>
       </nav>
 
-      {/* =========================================
-          HERO
-      ========================================== */}
-
+      {/* HERO */}
       <section className="relative px-4 pb-20 pt-28 sm:px-6 sm:pb-24 sm:pt-36 lg:px-8 lg:pb-32 lg:pt-44">
         <div className="mx-auto max-w-7xl">
           <div className="grid items-center gap-14 lg:grid-cols-2 lg:gap-16">
-
-            {/* =====================================
-                HERO TEXT
-            ====================================== */}
-
             <div className="text-center lg:text-left">
-              {/* BADGE */}
-
-              <div
-                className={`mb-6 inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[10px] font-bold backdrop-blur-xl sm:text-xs ${
-                  darkMode
-                    ? "border-blue-400/20 bg-blue-500/10 text-blue-300"
-                    : "border-blue-100 bg-blue-50/80 text-blue-700"
-                }`}
-              >
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-75" />
-
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-600" />
-                </span>
-
-                SISTEM ABSENSI CLOUD
+              <div className="glass mb-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold c-brand">
+                <span className="h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_10px_var(--accent)]" />
+                Sistem absensi cloud
               </div>
 
-              {/* TITLE */}
-
-              <h1
-                className={`text-[2.8rem] font-black leading-[1.03] tracking-tight sm:text-6xl lg:text-7xl ${
-                  darkMode
-                    ? "text-white"
-                    : "text-slate-950"
-                }`}
-              >
+              <h1 className="f-display text-[2.9rem] font-extrabold leading-[1.02] tracking-tight sm:text-6xl lg:text-[4.6rem]">
                 Pantau Kehadiran
                 <br />
-
-                <span className="bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent">
-                  Lebih Cerdas.
-                </span>
-
+                <span className="grad-text">Lebih Cerdas.</span>
                 <br />
-
-                <span
-                  className={
-                    darkMode
-                      ? "text-slate-300"
-                      : "text-slate-700"
-                  }
-                >
-                  Lebih Cepat.
-                </span>
+                <span className="c-mute">Lebih Cepat.</span>
               </h1>
 
-              {/* DESCRIPTION */}
-
-              <p
-                className={`mx-auto mt-6 max-w-xl text-sm leading-7 sm:text-lg lg:mx-0 ${
-                  darkMode
-                    ? "text-slate-400"
-                    : "text-slate-500"
-                }`}
-              >
-                Tingkatkan disiplin dan produktivitas
-                dengan verifikasi wajah, GPS,
-                approval, dan monitoring dalam satu
-                platform.
+              <p className="c-mute mx-auto mt-6 max-w-xl text-base leading-7 sm:text-lg lg:mx-0">
+                Tingkatkan disiplin dan produktivitas dengan verifikasi wajah, GPS, approval, dan monitoring dalam satu platform.
               </p>
 
-              {/* BUTTON */}
-
               <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:justify-center lg:justify-start">
-                <Link
-                  href="/login"
-                  className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-7 py-4 text-sm font-bold text-white shadow-xl shadow-blue-600/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl hover:shadow-blue-600/30"
-                >
-                  <span className="relative z-10">
-                    Mulai Sekarang →
-                  </span>
-
-                  <span className="absolute inset-0 -translate-x-full bg-white/20 transition-transform duration-500 group-hover:translate-x-0" />
+                <Link href="/login" className="btn-primary px-8 py-4 text-sm">
+                  Mulai Sekarang
                 </Link>
-
-                <a
-                  href="#fitur"
-                  className={`rounded-2xl border px-7 py-4 text-center text-sm font-bold backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 ${
-                    darkMode
-                      ? "border-white/10 bg-white/5 text-slate-200 hover:border-blue-400/30 hover:bg-white/10 hover:text-blue-300"
-                      : "border-slate-200 bg-white/80 text-slate-700 hover:border-blue-200 hover:text-blue-600"
-                  }`}
-                >
-                  Lihat Fitur ↓
+                <a href="#fitur" className="btn-ghost px-8 py-4 text-center text-sm">
+                  Lihat Fitur
                 </a>
               </div>
 
-              {/* STATS */}
-
-              <div className="mx-auto mt-9 grid max-w-lg grid-cols-3 gap-2 lg:mx-0 lg:gap-3">
-                <div className="stat-card">
-                  <strong>99.9%</strong>
-                  <span>Accuracy</span>
-                </div>
-
-                <div className="stat-card">
-                  <strong>LIVE</strong>
-                  <span>Monitoring</span>
-                </div>
-
-                <div className="stat-card">
-                  <strong>CLOUD</strong>
-                  <span>System</span>
-                </div>
+              <div className="mx-auto mt-10 flex max-w-md divide-x divide-[var(--line)] lg:mx-0">
+                {[
+                  ["99.9%", "Akurasi"],
+                  ["Live", "Monitoring"],
+                  ["Cloud", "Sistem"],
+                ].map(([a, b]) => (
+                  <div key={a} className="flex-1 px-4 first:pl-0 lg:text-left">
+                    <strong className="f-display block text-2xl font-extrabold sm:text-3xl">{a}</strong>
+                    <span className="c-mute text-xs">{b}</span>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* =========================================
-                HERO IMAGE + YOYO
-            ========================================== */}
-
+            {/* HERO IMAGE */}
             <div className="mx-auto w-full max-w-2xl">
-              <div className="relative min-h-[560px]">
+              <div className="relative mx-auto max-w-[480px] px-2 py-10">
+                <div className="pointer-events-none absolute left-1/2 top-1/2 h-[400px] w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--brand)] opacity-30 blur-3xl sm:h-[460px] sm:w-[460px]" />
 
-                {/* MAIN GLOW */}
-
-                <div
-                  className={`pointer-events-none absolute left-1/2 top-28 h-[360px] w-[360px] -translate-x-1/2 rounded-full blur-3xl transition-all duration-500 sm:h-[430px] sm:w-[430px] ${
-                    isDragging
-                      ? "scale-125 opacity-80"
-                      : "scale-100 opacity-100"
-                  } ${
-                    darkMode
-                      ? "bg-blue-600/25"
-                      : "bg-blue-400/20"
-                  }`}
-                />
-
-                {/* =====================================
-                    YOYO ANCHOR
-                ====================================== */}
-
-                <div
-                  className={`pointer-events-none absolute left-1/2 top-5 z-30 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border shadow-xl transition-all duration-300 ${
-                    isDragging
-                      ? "scale-125 shadow-blue-500/40"
-                      : "scale-100"
-                  } ${
-                    darkMode
-                      ? "border-blue-300/30 bg-[#111936]"
-                      : "border-blue-200 bg-white"
-                  }`}
-                >
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      darkMode
-                        ? "bg-blue-400"
-                        : "bg-blue-500"
-                    }`}
+                <div className="glass card-shadow relative overflow-hidden rounded-[2rem] p-2.5 sm:p-3">
+                  <Image
+                    src="/hero.png"
+                    alt="Sistem Absensi Dashboard"
+                    width={650}
+                    height={650}
+                    priority
+                    className="h-auto w-full rounded-[1.5rem] object-contain"
                   />
-                </div>
 
-                {/* =====================================
-                    YOYO ROPE
-                    TALI SELALU TERHUBUNG KE GAMBAR
-                ====================================== */}
-
-                <div
-                  className={`pointer-events-none absolute left-1/2 z-0 w-[3px] -translate-x-1/2 rounded-full transition-[top,height,opacity] duration-200 ${
-                    isDragging
-                      ? "opacity-100"
-                      : "opacity-75"
-                  } ${
-                    darkMode
-                      ? "bg-gradient-to-b from-blue-400 via-indigo-400 to-purple-500"
-                      : "bg-gradient-to-b from-blue-500 via-indigo-500 to-purple-500"
-                  }`}
-                  style={{
-                    top: `${ropeTop}px`,
-                    height: `${ropeHeight}px`,
-                  }}
-                />
-
-                {/* YOYO DECORATIVE RING */}
-
-                <div
-                  className={`pointer-events-none absolute left-1/2 top-[28px] z-20 h-12 w-12 -translate-x-1/2 rounded-full border transition-all duration-300 ${
-                    isDragging
-                      ? "scale-125 opacity-100"
-                      : "scale-100 opacity-70"
-                  } ${
-                    darkMode
-                      ? "border-blue-400/20"
-                      : "border-blue-500/15"
-                  }`}
-                />
-
-                {/* =====================================
-                    DRAG AREA
-                    GAMBAR LEBIH KECIL
-                ====================================== */}
-
-                <div
-                  ref={heroRef}
-                  onPointerDown={handlePointerDown}
-                  onPointerMove={handlePointerMove}
-                  onPointerUp={handlePointerUp}
-                  onPointerCancel={handlePointerCancel}
-                  style={{
-                    transform: `translateY(${heroY}px)`,
-                  }}
-                  className={`relative z-10 mx-auto w-full max-w-[470px] select-none pt-[128px] touch-none ${
-                    isDragging
-                      ? "cursor-grabbing"
-                      : "cursor-grab"
-                  } ${
-                    !isDragging
-                      ? "hero-spring"
-                      : ""
-                  }`}
-                >
-                  {/* IMAGE CARD */}
-
-                  <div
-                    className={`group relative overflow-hidden rounded-[2rem] border p-2.5 backdrop-blur-xl transition-all duration-500 sm:p-3 ${
-                      isDragging
-                        ? "scale-[1.025] shadow-[0_35px_80px_-20px_rgba(37,99,235,0.45)]"
-                        : "hover:-translate-y-2"
-                    } ${
-                      darkMode
-                        ? "border-white/10 bg-white/5 shadow-2xl shadow-blue-900/20"
-                        : "border-slate-200/80 bg-white/80 shadow-2xl shadow-slate-300/40"
-                    }`}
-                  >
-                    <Image
-                      src="/hero.png"
-                      alt="Sistem Absensi Dashboard"
-                      width={650}
-                      height={650}
-                      priority
-                      draggable={false}
-                      className={`h-auto w-full rounded-[1.5rem] object-contain transition duration-500 ${
-                        isDragging
-                          ? "scale-[1.015]"
-                          : "group-hover:scale-[1.02]"
-                      }`}
-                    />
-
-                    {/* SHINE */}
-
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent opacity-0 transition duration-500 group-hover:opacity-100" />
-
-                    {/* DRAG LABEL */}
-
-                    <div
-                      className={`pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full border px-3 py-1.5 text-[9px] font-black tracking-wider backdrop-blur-xl transition-all duration-300 ${
-                        isDragging
-                          ? "translate-y-1 opacity-100"
-                          : "opacity-0 group-hover:opacity-100"
-                      } ${
-                        darkMode
-                          ? "border-white/10 bg-[#0b1225]/80 text-blue-300"
-                          : "border-slate-200 bg-white/85 text-blue-600"
-                      }`}
-                    >
-                      {isDragging
-                        ? "RELEASE ME 🪀"
-                        : "DRAG ME ↓"}
-                    </div>
-
-                    {/* IMAGE BOTTOM GLOW */}
-
-                    <div
-                      className={`pointer-events-none absolute -bottom-10 left-1/2 h-20 w-3/4 -translate-x-1/2 rounded-full blur-2xl transition-all duration-500 ${
-                        isDragging
-                          ? "bg-blue-500/30 opacity-100"
-                          : "bg-blue-500/10 opacity-0 group-hover:opacity-100"
-                      }`}
-                    />
+                  {/* face-scan overlay */}
+                  <div className="pointer-events-none absolute inset-3 overflow-hidden rounded-[1.5rem]">
+                    <span className="scanline" />
+                    <i className="corner left-3 top-3 border-l-2 border-t-2" />
+                    <i className="corner right-3 top-3 border-r-2 border-t-2" />
+                    <i className="corner bottom-3 left-3 border-b-2 border-l-2" />
+                    <i className="corner bottom-3 right-3 border-b-2 border-r-2" />
                   </div>
                 </div>
 
-                {/* =====================================
-                    ATTENDANCE BADGE
-                ====================================== */}
-
-                <div
-                  className={`absolute left-0 top-[220px] z-20 rounded-2xl border px-3 py-2.5 shadow-xl backdrop-blur-xl transition-transform duration-300 hover:-translate-y-1 sm:left-2 sm:px-4 sm:py-3 ${
-                    darkMode
-                      ? "border-white/10 bg-[#10172a]/90"
-                      : "border-slate-200 bg-white/90"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-sm text-emerald-500 sm:h-10 sm:w-10">
-                      ✓
-                    </div>
-
+                <div className="glass card-shadow absolute -left-1 top-[28%] z-20 rounded-2xl px-3 py-2.5 sm:-left-6 sm:px-4 sm:py-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent)]/15 text-[var(--accent)]">✓</div>
                     <div>
-                      <p
-                        className={`text-[9px] font-black sm:text-xs ${
-                          darkMode
-                            ? "text-white"
-                            : "text-slate-900"
-                        }`}
-                      >
-                        ATTENDANCE
-                      </p>
-
-                      <p className="text-[8px] text-emerald-500 sm:text-[10px]">
-                        Successfully Recorded
-                      </p>
+                      <p className="text-xs font-bold">Absensi tercatat</p>
+                      <p className="text-[11px] text-[var(--accent)]">Berhasil disimpan</p>
                     </div>
                   </div>
                 </div>
 
-                {/* =====================================
-                    GPS BADGE
-                ====================================== */}
-
-                <div
-                  className={`absolute right-0 top-[390px] z-20 rounded-2xl border px-3 py-2.5 shadow-xl backdrop-blur-xl transition-transform duration-300 hover:-translate-y-1 sm:right-2 sm:px-4 sm:py-3 ${
-                    darkMode
-                      ? "border-white/10 bg-[#10172a]/90"
-                      : "border-slate-200 bg-white/90"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 sm:gap-3">
-                    <span className="text-lg">
-                      📍
-                    </span>
-
+                <div className="glass card-shadow absolute -right-1 bottom-[18%] z-20 rounded-2xl px-3 py-2.5 sm:-right-6 sm:px-4 sm:py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">📍</span>
                     <div>
-                      <p
-                        className={`text-[8px] sm:text-[10px] ${
-                          darkMode
-                            ? "text-slate-500"
-                            : "text-slate-400"
-                        }`}
-                      >
-                        GPS STATUS
-                      </p>
-
-                      <p
-                        className={`text-[9px] font-bold sm:text-xs ${
-                          darkMode
-                            ? "text-white"
-                            : "text-slate-900"
-                        }`}
-                      >
-                        Location Verified
-                      </p>
+                      <p className="c-mute text-[11px]">Status GPS</p>
+                      <p className="text-xs font-bold">Lokasi terverifikasi</p>
                     </div>
-                  </div>
-                </div>
-
-                {/* =====================================
-                    YOYO HINT
-                ====================================== */}
-
-                <div
-                  className={`pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 text-center transition-all duration-500 ${
-                    isDragging
-                      ? "translate-y-2 opacity-100"
-                      : "opacity-60"
-                  }`}
-                >
-                  <div
-                    className={`flex items-center gap-2 text-[9px] font-bold tracking-widest ${
-                      darkMode
-                        ? "text-slate-500"
-                        : "text-slate-400"
-                    }`}
-                  >
-                    <span className="animate-bounce">
-                      ↓
-                    </span>
-
-                    DRAG & RELEASE
-
-                    <span className="animate-bounce">
-                      ↓
-                    </span>
                   </div>
                 </div>
               </div>
@@ -817,114 +280,30 @@ export default function Home() {
         </div>
       </section>
 
-      {/* =========================================
-          FEATURES
-      ========================================== */}
-
-      <section
-        id="fitur"
-        className={`relative px-4 py-20 sm:px-6 sm:py-24 lg:px-8 lg:py-28 ${
-          darkMode
-            ? "bg-[#080c1a]"
-            : "bg-white"
-        }`}
-      >
+      {/* FEATURES */}
+      <section id="fitur" className="bg-surface relative px-4 py-20 sm:px-6 sm:py-24 lg:px-8 lg:py-28">
         <div className="mx-auto max-w-7xl">
           <div className="mx-auto mb-12 max-w-2xl text-center sm:mb-16">
-            <span className="text-[10px] font-black tracking-[0.25em] text-blue-500">
-              POWERFUL FEATURES
-            </span>
-
-            <h2
-              className={`mt-3 text-3xl font-black tracking-tight sm:text-5xl ${
-                darkMode
-                  ? "text-white"
-                  : "text-slate-950"
-              }`}
-            >
+            <h2 className="f-display text-3xl font-extrabold tracking-tight sm:text-5xl">
               Teknologi masa depan
               <br />
-
-              <span
-                className={
-                  darkMode
-                    ? "text-slate-500"
-                    : "text-slate-400"
-                }
-              >
-                untuk absensi modern.
-              </span>
+              <span className="c-mute">untuk absensi modern.</span>
             </h2>
-
-            <p
-              className={`mx-auto mt-4 max-w-xl text-sm leading-6 ${
-                darkMode
-                  ? "text-slate-400"
-                  : "text-slate-500"
-              }`}
-            >
-              Semua fitur penting tersedia dalam satu
-              sistem yang cepat, aman, dan mudah
-              digunakan.
+            <p className="c-mute mx-auto mt-4 max-w-xl text-sm leading-6 sm:text-base">
+              Semua fitur penting tersedia dalam satu sistem yang cepat, aman, dan mudah digunakan.
             </p>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-5 md:grid-cols-6">
             {fitur.map((item) => (
-              <div
-                key={item.title}
-                className={`group relative overflow-hidden rounded-3xl border p-6 transition-all duration-500 hover:-translate-y-2 ${
-                  darkMode
-                    ? "border-white/10 bg-white/[0.035] hover:border-blue-500/30 hover:bg-white/[0.06] hover:shadow-2xl hover:shadow-blue-900/10"
-                    : "border-slate-200 bg-white shadow-sm hover:border-blue-100 hover:shadow-2xl hover:shadow-blue-100/40"
-                }`}
-              >
-                <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full bg-blue-500/10 blur-2xl opacity-0 transition duration-500 group-hover:opacity-100" />
-
-                <div className="relative">
-                  <div className="mb-6 flex items-center justify-between">
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-2xl text-xl transition duration-300 group-hover:scale-110 ${
-                        darkMode
-                          ? "bg-blue-500/10"
-                          : "bg-blue-50"
-                      }`}
-                    >
-                      {item.icon}
-                    </div>
-
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[8px] font-black ${
-                        darkMode
-                          ? "bg-blue-500/10 text-blue-300"
-                          : "bg-blue-50 text-blue-600"
-                      }`}
-                    >
-                      {item.tag}
-                    </span>
+              <div key={item.key} className={`bento group relative overflow-hidden rounded-3xl p-6 sm:p-7 ${item.span}`}>
+                <div className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-[var(--brand)] opacity-0 blur-3xl transition duration-500 group-hover:opacity-20" />
+                <div className="relative flex h-full flex-col justify-between gap-8">
+                  <FeatureVisual k={item.key} />
+                  <div>
+                    <h3 className="f-display text-xl font-extrabold">{item.title}</h3>
+                    <p className="c-mute mt-2 text-sm leading-6">{item.desc}</p>
                   </div>
-
-                  <h3
-                    className={`text-lg font-black ${
-                      darkMode
-                        ? "text-white"
-                        : "text-slate-900"
-                    }`}
-                  >
-                    {item.title}
-                  </h3>
-
-                  <p
-                    className={`mt-2 text-sm leading-6 ${
-                      darkMode
-                        ? "text-slate-400"
-                        : "text-slate-500"
-                    }`}
-                  >
-                    {item.desc}
-                  </p>
-
-                  <div className="mt-6 h-1 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 group-hover:w-14" />
                 </div>
               </div>
             ))}
@@ -932,297 +311,220 @@ export default function Home() {
         </div>
       </section>
 
-      {/* =========================================
-          HOW IT WORK
-      ========================================== */}
-
-      <section
-        className={`relative overflow-hidden px-4 py-20 sm:px-6 sm:py-24 lg:px-8 lg:py-28 ${
-          darkMode
-            ? "bg-[#050816]"
-            : "bg-slate-950"
-        }`}
-      >
+      {/* HOW IT WORKS */}
+      <section className="how relative overflow-hidden px-4 py-20 sm:px-6 sm:py-24 lg:px-8 lg:py-28">
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute left-[20%] top-0 h-64 w-64 rounded-full bg-blue-600/10 blur-3xl" />
-
-          <div className="absolute bottom-0 right-[10%] h-64 w-64 rounded-full bg-purple-600/10 blur-3xl" />
+          <div className="absolute left-[15%] top-0 h-72 w-72 rounded-full bg-[var(--brand)] opacity-20 blur-3xl" />
+          <div className="absolute bottom-0 right-[10%] h-72 w-72 rounded-full bg-[var(--accent)] opacity-15 blur-3xl" />
         </div>
 
         <div className="relative mx-auto max-w-7xl">
-          <div className="mb-12 text-center sm:mb-16">
-            <span className="text-[10px] font-black tracking-[0.25em] text-blue-400">
-              HOW IT WORKS
-            </span>
-
-            <h2 className="mt-3 text-3xl font-black text-white sm:text-5xl">
-              Semudah{" "}
-              <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                1, 2, 3, 4.
-              </span>
+          <div className="mb-14 text-center">
+            <h2 className="f-display text-3xl font-extrabold text-white sm:text-5xl">
+              Semudah <span className="grad-text">1, 2, 3, 4.</span>
             </h2>
-
-            <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-400">
-              Proses absensi dibuat sederhana agar
-              pengguna dapat mencatat kehadiran dalam
-              hitungan detik.
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-400 sm:text-base">
+              Proses absensi dibuat sederhana agar pengguna dapat mencatat kehadiran dalam hitungan detik.
             </p>
           </div>
 
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {steps.map((step) => (
-              <div
-                key={step.number}
-                className="group relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035] p-6 backdrop-blur-xl transition-all duration-500 hover:-translate-y-2 hover:border-blue-500/30 hover:bg-white/[0.06]"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-5xl font-black text-white/[0.07]">
-                    {step.number}
-                  </span>
-
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/5 text-lg transition duration-300 group-hover:scale-110 group-hover:bg-blue-500/10">
-                    {step.icon}
-                  </div>
+          <div className="relative grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="absolute left-[12%] right-[12%] top-7 hidden h-px bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent opacity-50 lg:block" />
+            {steps.map((s) => (
+              <div key={s.number} className="relative text-center">
+                <div className="f-display relative mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[var(--accent)]/50 bg-[#07111f] text-xl font-extrabold text-[var(--accent)] shadow-[0_0_30px_-5px_var(--accent)]">
+                  {s.number}
                 </div>
-
-                <h3 className="mt-6 text-lg font-black text-white">
-                  {step.title}
-                </h3>
-
-                <p className="mt-2 text-sm leading-6 text-slate-400">
-                  {step.desc}
-                </p>
-
-                <div className="mt-6 h-1 w-8 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 transition-all duration-300 group-hover:w-14" />
+                <h3 className="f-display mt-5 text-lg font-extrabold text-white">{s.title}</h3>
+                <p className="mx-auto mt-2 max-w-[220px] text-sm leading-6 text-slate-400">{s.desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* =========================================
-          CTA
-      ========================================== */}
-
-      <section
-        className={`px-4 py-20 sm:px-6 sm:py-24 lg:px-8 ${
-          darkMode
-            ? "bg-[#080c1a]"
-            : "bg-white"
-        }`}
-      >
+      {/* CTA */}
+      <section className="bg-surface px-4 py-20 sm:px-6 sm:py-24 lg:px-8">
         <div className="mx-auto max-w-5xl">
-          <div className="relative overflow-hidden rounded-[2rem] border border-blue-500/20 bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 px-6 py-12 text-center shadow-2xl shadow-blue-600/20 sm:px-10 sm:py-16">
-            <div className="absolute -left-20 -top-20 h-60 w-60 rounded-full bg-white/10 blur-3xl" />
-
-            <div className="absolute -bottom-20 -right-20 h-60 w-60 rounded-full bg-black/10 blur-3xl" />
-
+          <div className="cta relative overflow-hidden rounded-[2rem] px-6 py-14 text-center sm:px-10 sm:py-20">
+            <div className="absolute -left-20 -top-20 h-64 w-64 rounded-full bg-white/20 blur-3xl" />
+            <div className="absolute -bottom-24 -right-16 h-64 w-64 rounded-full bg-black/20 blur-3xl" />
             <div className="relative">
-              <span className="text-[10px] font-black tracking-[0.25em] text-blue-100">
-                READY TO START?
-              </span>
-
-              <h2 className="mt-4 text-3xl font-black text-white sm:text-5xl">
+              <h2 className="f-display text-3xl font-extrabold text-white sm:text-5xl">
                 Kelola absensi lebih
                 <br />
                 mudah bersama SVARA.
               </h2>
-
-              <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-blue-100">
-                Sistem absensi modern untuk membantu
-                meningkatkan efisiensi dan produktivitas.
+              <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-white/80 sm:text-base">
+                Sistem absensi modern untuk membantu meningkatkan efisiensi dan produktivitas.
               </p>
-
               <Link
                 href="/login"
-                className="mt-8 inline-flex rounded-2xl bg-white px-7 py-4 text-sm font-black text-blue-700 shadow-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl"
+                className="mt-8 inline-flex rounded-2xl bg-white px-8 py-4 text-sm font-extrabold text-[#06223f] shadow-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl"
               >
-                Mulai Sekarang →
+                Mulai Sekarang
               </Link>
             </div>
           </div>
         </div>
       </section>
 
-      {/* =========================================
-          FOOTER
-      ========================================== */}
-
-      <footer
-        className={`border-t px-4 py-10 ${
-          darkMode
-            ? "border-white/10 bg-[#03050c]"
-            : "border-slate-200 bg-slate-50"
-        }`}
-      >
+      {/* FOOTER */}
+      <footer className="footer border-t px-4 py-10">
         <div className="mx-auto flex max-w-7xl flex-col items-center gap-4 text-center">
-          <div
-            className={`rounded-xl px-3 py-2 ${
-              darkMode
-                ? "bg-white"
-                : "bg-white shadow-sm"
-            }`}
-          >
-            <Image
-              src="/svara.png"
-              alt="SVARA Innovation Logo"
-              width={140}
-              height={40}
-              className="h-7 w-auto"
-            />
+          <div className="rounded-xl bg-white px-3 py-2 shadow-sm">
+            <Image src="/svara.png" alt="SVARA Innovation Logo" width={140} height={40} className="h-7 w-auto" />
           </div>
-
-          <p
-            className={`text-xs ${
-              darkMode
-                ? "text-slate-600"
-                : "text-slate-500"
-            }`}
-          >
-            © {new Date().getFullYear()} SVARA
-            INNOVATION. Hak Cipta Dilindungi.
-          </p>
-
-          <p
-            className={`text-[10px] ${
-              darkMode
-                ? "text-slate-700"
-                : "text-slate-400"
-            }`}
-          >
-            Smart Attendance • Cloud • Realtime
-          </p>
+          <p className="c-mute text-xs">© {new Date().getFullYear()} SVARA INNOVATION. Hak Cipta Dilindungi.</p>
+          <p className="c-mute text-[11px] opacity-70">Smart Attendance • Cloud • Realtime</p>
         </div>
       </footer>
 
-      {/* =========================================
-          GLOBAL CSS
-      ========================================== */}
-
       <style jsx global>{`
-        html {
-          scroll-behavior: smooth;
+        /* ===== PALET — ganti di sini agar cocok dengan logo ===== */
+        :root {
+          --bg: #f3f8fc;
+          --surface: #ffffff;
+          --ink: #071a2e;
+          --mute: #5a6b7e;
+          --line: #dbe6f0;
+          --brand: #0a6cff;
+          --accent: #00b8a0;
+        }
+        .dark {
+          --bg: #050d19;
+          --surface: #0a1626;
+          --ink: #eaf3ff;
+          --mute: #8ba2ba;
+          --line: #172a40;
+          --brand: #3d8bff;
+          --accent: #2ee6c5;
         }
 
-        body {
-          margin: 0;
-          overflow-x: hidden;
+        html { scroll-behavior: smooth; }
+        body { margin: 0; overflow-x: hidden; }
+        * { box-sizing: border-box; }
+        ::selection { background: color-mix(in srgb, var(--brand) 30%, transparent); }
+
+        .app {
+          background: var(--bg);
+          color: var(--ink);
+          font-family: var(--f-body), system-ui, sans-serif;
+          transition: background 0.5s, color 0.5s;
+        }
+        .f-display { font-family: var(--f-display), var(--f-body), system-ui, sans-serif; }
+        .c-mute { color: var(--mute); }
+        .c-brand { color: var(--brand); }
+        .bg-surface { background: var(--surface); }
+        .bg-bg { background: var(--bg); }
+        .bd-line { border: 1px solid var(--line); }
+
+        .grad-text {
+          background: linear-gradient(100deg, var(--brand), var(--accent));
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+        }
+        .grid-bg {
+          background-image:
+            linear-gradient(var(--line) 1px, transparent 1px),
+            linear-gradient(90deg, var(--line) 1px, transparent 1px);
+          background-size: 56px 56px;
+          opacity: 0.45;
+          mask-image: radial-gradient(ellipse at 50% 20%, #000 0%, transparent 70%);
+          -webkit-mask-image: radial-gradient(ellipse at 50% 20%, #000 0%, transparent 70%);
         }
 
-        * {
-          box-sizing: border-box;
+        .glass {
+          background: color-mix(in srgb, var(--surface) 78%, transparent);
+          border: 1px solid var(--line);
+          backdrop-filter: blur(18px);
+          -webkit-backdrop-filter: blur(18px);
+        }
+        .card-shadow { box-shadow: 0 30px 60px -28px color-mix(in srgb, var(--brand) 55%, transparent); }
+        .nav-solid {
+          background: color-mix(in srgb, var(--bg) 80%, transparent);
+          backdrop-filter: blur(20px);
+          border-bottom: 1px solid var(--line);
         }
 
-        ::selection {
-          background: rgba(59, 130, 246, 0.25);
-        }
-
-        /* =========================================
-           YOYO SPRING
-        ========================================== */
-
-        .hero-spring {
-          transition:
-            transform 900ms
-              cubic-bezier(0.16, 1.45, 0.35, 1),
-            filter 500ms ease;
-        }
-
-        .hero-spring:hover {
-          filter: drop-shadow(
-            0 20px 35px rgba(59, 130, 246, 0.08)
-          );
-        }
-
-        /* =========================================
-           STAT CARD
-        ========================================== */
-
-        .stat-card {
-          border: 1px solid
-            ${darkMode
-              ? "rgba(255,255,255,0.08)"
-              : "#e2e8f0"};
-
-          background:
-            ${darkMode
-              ? "rgba(255,255,255,0.035)"
-              : "rgba(255,255,255,0.8)"};
-
-          backdrop-filter: blur(16px);
+        .btn-primary {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           border-radius: 16px;
-          padding: 13px 8px;
-          text-align: center;
-          transition: all 0.3s ease;
+          font-weight: 800;
+          color: #fff;
+          background: linear-gradient(100deg, var(--brand), color-mix(in srgb, var(--brand) 40%, var(--accent)));
+          box-shadow: 0 14px 30px -12px var(--brand);
+          transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .btn-primary:hover { transform: translateY(-3px); box-shadow: 0 20px 40px -12px var(--brand); }
+        .btn-ghost {
+          border-radius: 16px;
+          font-weight: 700;
+          border: 1px solid var(--line);
+          background: color-mix(in srgb, var(--surface) 70%, transparent);
+          backdrop-filter: blur(14px);
+          transition: transform 0.3s, border-color 0.3s, color 0.3s;
+        }
+        .btn-ghost:hover { transform: translateY(-3px); border-color: var(--brand); color: var(--brand); }
+        a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+        .chip {
+          border-radius: 999px;
+          padding: 5px 11px;
+          font-size: 11px;
+          font-weight: 700;
+          color: var(--accent);
+          border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+          background: color-mix(in srgb, var(--surface) 85%, transparent);
+          backdrop-filter: blur(10px);
         }
 
-        .stat-card:hover {
-          transform: translateY(-3px);
-          border-color: rgba(59, 130, 246, 0.3);
-
-          box-shadow:
-            0 15px 35px
-            rgba(37, 99, 235, 0.08);
+        .bento {
+          background: var(--bg);
+          border: 1px solid var(--line);
+          transition: transform 0.4s, border-color 0.4s, box-shadow 0.4s;
+        }
+        .bento:hover {
+          transform: translateY(-6px);
+          border-color: color-mix(in srgb, var(--brand) 50%, var(--line));
+          box-shadow: 0 30px 60px -30px color-mix(in srgb, var(--brand) 40%, transparent);
         }
 
-        .stat-card strong {
-          display: block;
-          font-size: 15px;
-          font-weight: 900;
+        .how { background: #07111f; }
+        .cta { background: linear-gradient(120deg, #0a56d6 0%, #0a6cff 45%, #00b8a0 130%); box-shadow: 0 30px 80px -30px #0a6cff; }
+        .footer { border-color: var(--line); background: var(--bg); }
 
-          color:
-            ${darkMode
-              ? "#ffffff"
-              : "#0f172a"};
+        /* ===== FACE SCAN ===== */
+        .scanline {
+          position: absolute;
+          left: 0;
+          right: 0;
+          height: 70px;
+          top: -70px;
+          background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--accent) 45%, transparent));
+          border-bottom: 2px solid var(--accent);
+          animation: scan 3.6s ease-in-out infinite;
         }
-
-        .stat-card span {
-          display: block;
-          margin-top: 3px;
-          font-size: 9px;
-
-          color:
-            ${darkMode
-              ? "#64748b"
-              : "#94a3b8"};
+        @keyframes scan {
+          0% { top: -70px; opacity: 0; }
+          15% { opacity: 1; }
+          85% { opacity: 1; }
+          100% { top: 100%; opacity: 0; }
         }
-
-        /* =========================================
-           RESPONSIVE
-        ========================================== */
-
-        @media (max-width: 1024px) {
-          .hero-spring {
-            transition:
-              transform 800ms
-                cubic-bezier(0.16, 1.45, 0.35, 1),
-              filter 400ms ease;
-          }
-        }
-
-        @media (max-width: 640px) {
-          .stat-card {
-            padding: 11px 5px;
-            border-radius: 13px;
-          }
-
-          .stat-card strong {
-            font-size: 13px;
-          }
-
-          .stat-card span {
-            font-size: 8px;
-          }
+        .corner {
+          position: absolute;
+          width: 26px;
+          height: 26px;
+          border-color: var(--accent);
+          border-radius: 6px;
         }
 
         @media (prefers-reduced-motion: reduce) {
-          html {
-            scroll-behavior: auto;
-          }
-
-          *,
-          *::before,
-          *::after {
+          html { scroll-behavior: auto; }
+          *, *::before, *::after {
             transition-duration: 0.01ms !important;
             animation-duration: 0.01ms !important;
             animation-iteration-count: 1 !important;

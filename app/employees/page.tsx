@@ -3,7 +3,40 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Bricolage_Grotesque, Figtree } from "next/font/google";
 import { supabase } from "@/lib/supabase";
+
+// =========================================================
+// FONT & TOKEN DESAIN (sama dengan halaman lainnya)
+// =========================================================
+
+const fontDisplay = Bricolage_Grotesque({
+  subsets: ["latin"],
+  variable: "--font-display",
+});
+
+const fontBody = Figtree({
+  subsets: ["latin"],
+  variable: "--font-body",
+});
+
+const FONT_VARS = `${fontDisplay.variable} ${fontBody.variable}`;
+const D = "font-[family-name:var(--font-display)]";
+const BASE = `${FONT_VARS} font-[family-name:var(--font-body)]`;
+
+const card = "rounded-2xl border border-slate-200/70 bg-white";
+
+const inputCls =
+  "h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-base text-slate-800 placeholder:text-slate-400 focus:border-[#0E1A3A] focus:outline-none focus:ring-2 focus:ring-[#0E1A3A]/15 disabled:bg-slate-50 disabled:text-slate-400 sm:h-11 sm:text-sm";
+
+const btnPrimary =
+  "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#0E1A3A] px-5 text-sm font-semibold text-white transition hover:bg-[#1a2a5a] disabled:cursor-not-allowed disabled:opacity-50";
+
+const btnGhost =
+  "inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50";
+
+const btnDanger =
+  "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50";
 
 const DIVISIONS = [
   "BOD",
@@ -16,15 +49,70 @@ const DIVISIONS = [
   "Tecno",
 ];
 
+const NONE = "__none";
+
 type Role = "owner" | "admin" | "employee";
+type EditableRole = "admin" | "employee";
+
+const ROLES: Record<Role, { label: string; color: string; badge: string }> = {
+  owner: {
+    label: "Owner",
+    color: "#8B5CF6",
+    badge: "bg-violet-50 text-violet-700 ring-violet-200",
+  },
+  admin: {
+    label: "Admin",
+    color: "#0EA5E9",
+    badge: "bg-sky-50 text-sky-700 ring-sky-200",
+  },
+  employee: {
+    label: "Employee",
+    color: "#0E1A3A",
+    badge: "bg-slate-100 text-slate-700 ring-slate-200",
+  },
+};
+
+const ROLE_ORDER: Record<Role, number> = { owner: 0, admin: 1, employee: 2 };
+
+const ICONS = {
+  back: "M19 12H5m7-7-7 7 7 7",
+  plus: "M12 5v14M5 12h14",
+  search: "m21 21-4.3-4.3M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z",
+  close: "M18 6 6 18M6 6l12 12",
+  edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z",
+  trash: "M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 11v6M14 11v6",
+  eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+  eyeOff:
+    "M3 3l18 18M10.6 6.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 4-.9M9.9 9.9a3 3 0 0 0 4.2 4.2",
+  chevDown: "m6 9 6 6 6-6",
+};
+
+// =========================================================
+// TIPE & HELPER
+// =========================================================
 
 type Employee = {
   id: string;
   full_name: string;
   email: string;
   role: Role;
-  phone?: string | null;
   division?: string | null;
+};
+
+type CreateForm = {
+  name: string;
+  email: string;
+  password: string;
+  role: EditableRole;
+  division: string;
+};
+
+const EMPTY_FORM: CreateForm = {
+  name: "",
+  email: "",
+  password: "",
+  role: "employee",
+  division: "",
 };
 
 const dashboardPath = (role: string) =>
@@ -34,61 +122,334 @@ const dashboardPath = (role: string) =>
     ? "/admin/dashboard"
     : "/dashboard";
 
+const initial = (name: string | null | undefined): string =>
+  name?.trim()?.charAt(0)?.toUpperCase() || "?";
+
+async function fetchEmployees(companyId: string): Promise<Employee[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, email, role, division")
+    .eq("company_id", companyId);
+
+  if (error) throw error;
+
+  return ((data ?? []) as Employee[]).sort(
+    (a, b) =>
+      ROLE_ORDER[a.role] - ROLE_ORDER[b.role] ||
+      a.full_name.localeCompare(b.full_name)
+  );
+}
+
+function Icon({
+  d,
+  className = "h-4 w-4",
+}: {
+  d: string;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
+  );
+}
+
+// =========================================================
+// KOMPONEN KECIL
+// =========================================================
+
+function Avatar({
+  name,
+  large = false,
+}: {
+  name: string;
+  large?: boolean;
+}) {
+  return (
+    <div
+      className={`${D} flex shrink-0 items-center justify-center rounded-xl bg-slate-100 font-semibold text-slate-600 ${
+        large ? "h-12 w-12 text-lg" : "h-10 w-10 text-sm"
+      }`}
+    >
+      {initial(name)}
+    </div>
+  );
+}
+
+function RoleBadge({ role }: { role: Role }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${ROLES[role].badge}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {ROLES[role].label}
+    </span>
+  );
+}
+
+function DivisionTag({ division }: { division?: string | null }) {
+  if (!division) {
+    return (
+      <span className="text-xs italic text-slate-400">Belum ada divisi</span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
+      {division}
+    </span>
+  );
+}
+
+function Field({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string;
+  htmlFor: string;
+  hint?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label
+        htmlFor={htmlFor}
+        className="mb-1.5 block text-sm font-semibold text-slate-700"
+      >
+        {label}
+      </label>
+      {children}
+      {hint && <p className="mt-1.5 text-xs text-slate-500">{hint}</p>}
+    </div>
+  );
+}
+
+function SelectField({
+  id,
+  value,
+  onChange,
+  disabled = false,
+  className = "",
+  children,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="relative">
+      <select
+        id={id}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className={`${inputCls} appearance-none pr-10 ${className}`}
+      >
+        {children}
+      </select>
+
+      <Icon
+        d={ICONS.chevDown}
+        className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+      />
+    </div>
+  );
+}
+
+function Modal({
+  title,
+  subtitle,
+  onClose,
+  footer,
+  children,
+  maxW = "sm:max-w-lg",
+}: {
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+  footer: React.ReactNode;
+  children: React.ReactNode;
+  maxW?: string;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/60 backdrop-blur-sm sm:items-center sm:p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white sm:rounded-3xl ${maxW}`}
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 sm:px-6">
+          <div className="min-w-0">
+            <h3 className={`${D} text-xl font-semibold text-slate-900`}>
+              {title}
+            </h3>
+
+            {subtitle && (
+              <p className="mt-0.5 break-words text-sm text-slate-500">
+                {subtitle}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Tutup"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 transition hover:bg-slate-100"
+          >
+            <Icon d={ICONS.close} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6">{children}</div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50/70 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end">
+          {footer}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RowActions({
+  canEdit,
+  canDelete,
+  onEdit,
+  onDelete,
+  variant,
+}: {
+  canEdit: boolean;
+  canDelete: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  variant: "card" | "table";
+}) {
+  const size =
+    variant === "card" ? "h-10 flex-1" : "h-9 px-3.5";
+
+  return (
+    <div
+      className={
+        variant === "card"
+          ? "flex gap-2 border-t border-slate-100 bg-slate-50/60 p-3"
+          : "flex justify-end gap-2"
+      }
+    >
+      {canEdit && (
+        <button
+          onClick={onEdit}
+          className={`${size} inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 transition hover:bg-slate-50`}
+        >
+          <Icon d={ICONS.edit} className="h-3.5 w-3.5" />
+          Edit
+        </button>
+      )}
+
+      {canDelete && (
+        <button
+          onClick={onDelete}
+          className={`${size} inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-white text-xs font-semibold text-rose-600 transition hover:bg-rose-50`}
+        >
+          <Icon d={ICONS.trash} className="h-3.5 w-3.5" />
+          Hapus
+        </button>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({
+  hasFilter,
+  onReset,
+}: {
+  hasFilter: boolean;
+  onReset: () => void;
+}) {
+  return (
+    <div className="px-6 py-14 text-center">
+      <h3 className={`${D} text-xl font-semibold text-slate-800`}>
+        {hasFilter ? "Data tidak ditemukan" : "Belum ada karyawan"}
+      </h3>
+
+      <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-slate-500">
+        {hasFilter
+          ? "Coba ubah kata kunci atau filter yang dipakai."
+          : "Tambahkan karyawan lewat tombol Tambah karyawan."}
+      </p>
+
+      {hasFilter && (
+        <button onClick={onReset} className={`${btnPrimary} mt-5`}>
+          Reset filter
+        </button>
+      )}
+    </div>
+  );
+}
+
+// =========================================================
+// HALAMAN
+// =========================================================
+
 export default function EmployeesPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [busy, setBusy] = useState(false);
+
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
+  const [companyName, setCompanyName] = useState("Company Attendance");
   const [currentRole, setCurrentRole] = useState("");
   const [companyId, setCompanyId] = useState("");
 
-  // CREATE
-  const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"admin" | "employee">("employee");
-  const [division, setDivision] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [notice, setNotice] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
+
+  // TAMBAH
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState<CreateForm>(EMPTY_FORM);
+  const [formError, setFormError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   // EDIT
   const [editing, setEditing] = useState<Employee | null>(null);
-  const [editRole, setEditRole] = useState<"admin" | "employee">("employee");
-  const [editDivision, setEditDivision] = useState("");
-  const [editPassword, setEditPassword] = useState("");
+  const [editForm, setEditForm] = useState({
+    role: "employee" as EditableRole,
+    division: "",
+    password: "",
+  });
+  const [showEditPassword, setShowEditPassword] = useState(false);
 
-  // =========================================================
-  // UI FILTER
-  // =========================================================
+  // HAPUS
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
+
+  // FILTER
   const [search, setSearch] = useState("");
   const [filterRole, setFilterRole] = useState<"all" | Role>("all");
   const [filterDivision, setFilterDivision] = useState("all");
-
-  const filteredEmployees = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-
-    return employees.filter((employee) => {
-      const matchesSearch =
-        !keyword ||
-        employee.full_name.toLowerCase().includes(keyword) ||
-        employee.email.toLowerCase().includes(keyword);
-
-      const matchesRole =
-        filterRole === "all" || employee.role === filterRole;
-
-      const matchesDivision =
-        filterDivision === "all" ||
-        (employee.division ?? "") === filterDivision;
-
-      return matchesSearch && matchesRole && matchesDivision;
-    });
-  }, [employees, search, filterRole, filterDivision]);
-
-  const totalAdmins = employees.filter((e) => e.role === "admin").length;
-  const totalEmployees = employees.filter((e) => e.role === "employee").length;
-
 
   // =========================================================
   // LOAD
@@ -106,15 +467,16 @@ export default function EmployeesPage() {
           return;
         }
 
-        setUserEmail(user.email ?? "");
-
         const { data: profile } = await supabase
           .from("profiles")
-          .select("company_id, role")
+          .select("company_id, role, full_name, companies(name)")
           .eq("id", user.id)
           .single();
 
-        if (!profile) return;
+        if (!profile) {
+          router.replace("/login");
+          return;
+        }
 
         if (!["owner", "admin"].includes(profile.role)) {
           router.replace("/dashboard");
@@ -122,19 +484,27 @@ export default function EmployeesPage() {
         }
 
         setCurrentRole(profile.role);
+
+        // Hanya username, email tidak ditampilkan di header.
+        setUserName(
+          profile.full_name || user.email?.split("@")[0] || "User"
+        );
+
+        const company: any = (profile as any).companies;
+        const cName = Array.isArray(company) ? company[0]?.name : company?.name;
+
+        if (cName) setCompanyName(cName);
+
+        if (!profile.company_id) {
+          setLoadError("Akun kamu belum terhubung ke perusahaan.");
+          return;
+        }
+
         setCompanyId(profile.company_id);
-
-        if (!profile.company_id) return;
-
-        const { data } = await supabase
-          .from("profiles")
-          .select("id, full_name, email, role, phone, division")
-          .eq("company_id", profile.company_id)
-          .order("role", { ascending: false });
-
-        setEmployees(data ?? []);
+        setEmployees(await fetchEmployees(profile.company_id));
       } catch (err) {
         console.error(err);
+        setLoadError("Gagal memuat data karyawan.");
       } finally {
         setLoading(false);
       }
@@ -142,6 +512,128 @@ export default function EmployeesPage() {
 
     load();
   }, [router]);
+
+  // =========================================================
+  // TOAST OTOMATIS HILANG
+  // =========================================================
+
+  useEffect(() => {
+    if (!notice) return;
+
+    const timer = setTimeout(() => setNotice(null), 4000);
+
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  // =========================================================
+  // MODAL: KUNCI SCROLL & ESC
+  // =========================================================
+
+  const modalOpen = showCreate || !!editing || !!deleteTarget;
+
+  useEffect(() => {
+    if (!modalOpen) return;
+
+    const previous = document.body.style.overflow;
+
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) {
+        setShowCreate(false);
+        setEditing(null);
+        setDeleteTarget(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [modalOpen, busy]);
+
+  // =========================================================
+  // DATA TURUNAN
+  // =========================================================
+
+  const roleCounts = useMemo(() => {
+    const result = { all: employees.length, owner: 0, admin: 0, employee: 0 };
+
+    employees.forEach((e) => {
+      result[e.role]++;
+    });
+
+    return result;
+  }, [employees]);
+
+  const divisionOptions = useMemo(() => {
+    const set = new Set<string>(DIVISIONS);
+
+    employees.forEach((e) => {
+      if (e.division) set.add(e.division);
+    });
+
+    return Array.from(set);
+  }, [employees]);
+
+  const divisionBars = useMemo(() => {
+    const rows = divisionOptions
+      .map((name) => ({
+        key: name,
+        label: name,
+        count: employees.filter((e) => e.division === name).length,
+      }))
+      .filter((row) => row.count > 0)
+      .sort((a, b) => b.count - a.count);
+
+    const none = employees.filter((e) => !e.division).length;
+
+    if (none > 0) {
+      rows.push({ key: NONE, label: "Belum ada divisi", count: none });
+    }
+
+    return rows;
+  }, [employees, divisionOptions]);
+
+  const noDivisionCount = employees.filter((e) => !e.division).length;
+
+  const filtered = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+
+    return employees.filter((employee) => {
+      if (filterRole !== "all" && employee.role !== filterRole) return false;
+
+      if (filterDivision === NONE) {
+        if (employee.division) return false;
+      } else if (
+        filterDivision !== "all" &&
+        employee.division !== filterDivision
+      ) {
+        return false;
+      }
+
+      if (
+        keyword &&
+        !employee.full_name.toLowerCase().includes(keyword) &&
+        !employee.email.toLowerCase().includes(keyword)
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [employees, search, filterRole, filterDivision]);
+
+  const hasFilter =
+    !!search.trim() || filterRole !== "all" || filterDivision !== "all";
+
+  const resetFilter = () => {
+    setSearch("");
+    setFilterRole("all");
+    setFilterDivision("all");
+  };
 
   // =========================================================
   // PERMISSION
@@ -156,95 +648,81 @@ export default function EmployeesPage() {
     (currentRole === "admin" && employee.role === "employee");
 
   // =========================================================
-  // CREATE
+  // TAMBAH
   // =========================================================
+
+  const openCreate = () => {
+    setForm(EMPTY_FORM);
+    setFormError("");
+    setShowPassword(false);
+    setShowCreate(true);
+  };
+
+  const closeCreate = () => {
+    if (busy) return;
+    setShowCreate(false);
+  };
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
 
-    if (!name.trim() || !email.trim() || !password || !division) {
-      setError("Mohon lengkapi semua data terlebih dahulu.");
+    if (busy) return;
+
+    setFormError("");
+
+    const name = form.name.trim();
+    const email = form.email.trim();
+
+    if (!name || !email || !form.password || !form.division) {
+      setFormError("Mohon lengkapi semua data terlebih dahulu.");
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password minimal 6 karakter.");
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      setFormError("Format email tidak valid.");
       return;
     }
 
-    setSaving(true);
+    if (form.password.length < 6) {
+      setFormError("Password minimal 6 karakter.");
+      return;
+    }
+
+    setBusy(true);
 
     try {
       const res = await fetch("/api/users/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          password,
-          role,
+          name,
+          email,
+          password: form.password,
+          role: form.role,
           company_id: companyId,
-          division,
+          division: form.division,
         }),
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(result?.error || "Gagal membuat user.");
+        setFormError(result?.error || "Gagal membuat user.");
         return;
       }
 
-      const newUser: Employee = {
-        id: result.user?.id ?? crypto.randomUUID(),
-        full_name: name.trim(),
-        email: email.trim(),
-        role,
-        division,
-      };
+      // Ambil ulang dari database supaya ID-nya pasti benar
+      setEmployees(await fetchEmployees(companyId));
 
-      setEmployees((prev) => [...prev, newUser]);
+      setShowCreate(false);
+      setForm(EMPTY_FORM);
 
-      setName("");
-      setEmail("");
-      setPassword("");
-      setDivision("");
-      setRole("employee");
-      setShowForm(false);
+      setNotice({ type: "success", text: `${name} berhasil ditambahkan.` });
     } catch (err) {
       console.error(err);
-      setError("Terjadi kesalahan saat membuat user.");
+      setFormError("Terjadi kesalahan saat membuat user.");
     } finally {
-      setSaving(false);
-    }
-  };
-
-  // =========================================================
-  // DELETE
-  // =========================================================
-
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Yakin ingin menghapus ${name} secara permanen?`)) return;
-
-    try {
-      const res = await fetch("/api/users/delete", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-
-      const result = await res.json();
-
-      if (!res.ok) {
-        alert(`❌ ${result?.error || "Gagal menghapus user."}`);
-        return;
-      }
-
-      setEmployees((prev) => prev.filter((e) => e.id !== id));
-    } catch (err) {
-      console.error(err);
-      alert("❌ Terjadi kesalahan sistem.");
+      setBusy(false);
     }
   };
 
@@ -254,85 +732,129 @@ export default function EmployeesPage() {
 
   const openEdit = (employee: Employee) => {
     setEditing(employee);
-    setEditRole(employee.role === "owner" ? "admin" : employee.role);
-    setEditDivision(employee.division ?? "");
-    setEditPassword("");
+    setEditForm({
+      role: employee.role === "owner" ? "admin" : employee.role,
+      division: employee.division ?? "",
+      password: "",
+    });
+    setShowEditPassword(false);
   };
 
   const closeEdit = () => {
-    if (saving) return;
-
+    if (busy) return;
     setEditing(null);
-    setEditRole("employee");
-    setEditDivision("");
-    setEditPassword("");
   };
 
-  const passwordValid =
-    !editPassword.trim() || editPassword.trim().length >= 6;
+  const editPassword = editForm.password.trim();
+  const passwordValid = !editPassword || editPassword.length >= 6;
 
-  const hasChanges = () => {
-    if (!editing) return false;
-
-    const roleChanged =
-      currentRole === "owner" &&
+  const hasChanges =
+    !!editing &&
+    ((currentRole === "owner" &&
       editing.role !== "owner" &&
-      editRole !== editing.role;
+      editForm.role !== editing.role) ||
+      editForm.division !== (editing.division ?? "") ||
+      editPassword.length > 0);
 
-    const divisionChanged =
-      editDivision !== (editing.division ?? "");
-
-    const passwordChanged =
-      editPassword.trim().length > 0;
-
-    return roleChanged || divisionChanged || passwordChanged;
-  };
+  const editDivisionOptions =
+    editing?.division && !divisionOptions.includes(editing.division)
+      ? [...divisionOptions, editing.division]
+      : divisionOptions;
 
   const saveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!editing || !hasChanges() || !passwordValid) return;
+    if (!editing || busy || !hasChanges || !passwordValid) return;
 
-    setSaving(true);
+    const target = editing;
+    const nextRole: Role = target.role === "owner" ? "owner" : editForm.role;
+
+    setBusy(true);
 
     try {
       const res = await fetch("/api/users/update", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: editing.id,
-          role: editing.role === "owner" ? "owner" : editRole,
-          division: editDivision,
-          password: editPassword.trim(),
+          id: target.id,
+          role: nextRole,
+          division: editForm.division,
+          password: editPassword,
         }),
       });
 
-      const result = await res.json();
+      const result = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         throw new Error(result?.error || "Gagal update data.");
       }
 
       setEmployees((prev) =>
-        prev.map((e) =>
-          e.id === editing.id
-            ? {
-                ...e,
-                role: editing.role === "owner" ? "owner" : editRole,
-                division: editDivision,
-              }
-            : e
+        prev.map((item) =>
+          item.id === target.id
+            ? { ...item, role: nextRole, division: editForm.division }
+            : item
         )
       );
 
-      closeEdit();
-      alert("✅ Data berhasil diupdate!");
+      setEditing(null);
+
+      setNotice({ type: "success", text: "Data berhasil diperbarui." });
     } catch (err: any) {
       console.error(err);
-      alert(err?.message || "Gagal menyimpan perubahan.");
+
+      setNotice({
+        type: "error",
+        text: err?.message || "Gagal menyimpan perubahan.",
+      });
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
+  };
+
+  // =========================================================
+  // HAPUS
+  // =========================================================
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || busy) return;
+
+    const target = deleteTarget;
+
+    setBusy(true);
+
+    try {
+      const res = await fetch("/api/users/delete", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: target.id }),
+      });
+
+      const result = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(result?.error || "Gagal menghapus user.");
+      }
+
+      setEmployees((prev) => prev.filter((item) => item.id !== target.id));
+      setDeleteTarget(null);
+
+      setNotice({ type: "success", text: `${target.full_name} dihapus.` });
+    } catch (err: any) {
+      console.error(err);
+
+      setNotice({
+        type: "error",
+        text: err?.message || "Terjadi kesalahan sistem.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
   };
 
   // =========================================================
@@ -341,364 +863,451 @@ export default function EmployeesPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-indigo-100 border-t-indigo-600" />
-          <p className="mt-4 text-sm font-bold text-slate-500">
-            Memuat data...
+      <main
+        className={`${BASE} flex min-h-screen items-center justify-center bg-[#F2F4F9]`}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-slate-200 border-t-[#0E1A3A]" />
+          <p className="text-sm font-medium text-slate-500">
+            Memuat data karyawan...
           </p>
         </div>
       </main>
     );
   }
 
+  const roleLabel =
+    currentRole === "owner"
+      ? "Owner"
+      : currentRole === "admin"
+      ? "Admin"
+      : currentRole;
+
+  const roleTiles: { key: "all" | Role; label: string; color: string }[] = [
+    { key: "all", label: "Semua", color: "#94A3B8" },
+    { key: "owner", label: "Owner", color: ROLES.owner.color },
+    { key: "admin", label: "Admin", color: ROLES.admin.color },
+    { key: "employee", label: "Employee", color: ROLES.employee.color },
+  ];
+
+  const maxBar = Math.max(1, ...divisionBars.map((row) => row.count));
+
   // =========================================================
-  // MAIN
+  // RENDER
   // =========================================================
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f6f8fc] text-slate-900">
-      {/* Background */}
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-indigo-300/20 blur-3xl" />
-        <div className="absolute right-0 top-20 h-96 w-96 rounded-full bg-blue-300/15 blur-3xl" />
-        <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-violet-300/10 blur-3xl" />
-      </div>
+    <main className={`${BASE} min-h-screen bg-[#F2F4F9] pb-16 text-slate-800`}>
+      {/* ================= TOAST ================= */}
 
-      {/* HEADER */}
-      <header className="sticky top-0 z-40 border-b border-white/70 bg-white/80 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
+      {notice && (
+        <div
+          role="status"
+          className={`fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-[120] max-w-[90vw] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-lg ${
+            notice.type === "success" ? "bg-emerald-600" : "bg-rose-600"
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
+
+      {/* ================= HEADER ================= */}
+
+      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
-            <Link
-              href={dashboardPath(currentRole)}
-              className="group flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-lg shadow-slate-900/15 transition hover:-translate-y-0.5 hover:bg-indigo-600"
-              aria-label="Kembali ke dashboard"
+            <div
+              className={`${D} flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0E1A3A] text-lg font-bold text-white`}
             >
-              <span className="text-lg transition group-hover:-translate-x-0.5">←</span>
-            </Link>
+              {companyName.charAt(0).toUpperCase()}
+            </div>
 
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="hidden h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-violet-600 text-lg shadow-lg shadow-indigo-500/20 sm:flex">
-                👥
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h1 className="truncate text-base font-black tracking-tight text-slate-900 sm:text-lg">
-                    Manajemen Karyawan
-                  </h1>
-                  <span className="hidden rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-emerald-600 sm:inline-flex">
-                    {currentRole}
-                  </span>
-                </div>
-                <p className="hidden truncate text-xs font-medium text-slate-400 sm:block">
-                  Kelola akun, role, dan divisi dalam satu tempat.
-                </p>
-              </div>
+            <div className="min-w-0">
+              <h1
+                className={`${D} truncate text-lg font-semibold leading-tight text-slate-900`}
+              >
+                {companyName}
+              </h1>
+              <p className="text-xs text-slate-500">Direktori karyawan</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden max-w-[220px] text-right lg:block">
-              <p className="truncate text-xs font-extrabold text-slate-700">{userEmail}</p>
-              <p className="mt-0.5 text-[9px] font-black uppercase tracking-[0.16em] text-indigo-500">
-                Administrator
-              </p>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="hidden items-center gap-2.5 md:flex">
+              <span className="max-w-[10rem] truncate text-sm font-semibold capitalize text-slate-700">
+                {userName}
+              </span>
+
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${
+                  currentRole === "owner"
+                    ? "bg-violet-50 text-violet-700 ring-violet-200"
+                    : "bg-sky-50 text-sky-700 ring-sky-200"
+                }`}
+              >
+                {roleLabel}
+              </span>
             </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-violet-600 text-sm font-black text-white shadow-md">
-              {userEmail.charAt(0).toUpperCase() || "U"}
-            </div>
+
+            <Link
+              href={dashboardPath(currentRole)}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              <Icon d={ICONS.back} />
+              <span className="hidden sm:inline">Dasbor</span>
+            </Link>
+
+            <button
+              onClick={handleLogout}
+              className="h-10 rounded-xl border border-slate-200 px-3.5 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-4 pb-12 pt-5 sm:px-6 sm:pt-7 lg:px-8">
-        {/* HERO */}
-        <section className="relative mb-6 overflow-hidden rounded-[30px] bg-gradient-to-br from-slate-950 via-indigo-950 to-indigo-700 p-5 text-white shadow-[0_25px_70px_-30px_rgba(49,46,129,0.55)] sm:p-7 lg:p-8">
-          <div className="absolute -right-24 -top-28 h-72 w-72 rounded-full bg-blue-400/20 blur-3xl" />
-          <div className="absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-violet-400/15 blur-3xl" />
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-8 sm:pt-8">
+        {/* ================= JUDUL ================= */}
 
-          <div className="relative z-10 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-center">
-            <div>
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.18em] text-indigo-100 backdrop-blur">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.9)]" />
-                Employee Management
-              </div>
-              <h2 className="max-w-2xl text-2xl font-black tracking-tight sm:text-3xl lg:text-4xl">
-                Kelola tim dengan lebih{" "}
-                <span className="text-indigo-300">rapi & cepat.</span>
-              </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-indigo-100/75">
-                Tambahkan akun baru, atur hak akses, kelola divisi, dan pantau seluruh anggota perusahaan dari satu halaman.
-              </p>
+        <section className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2
+              className={`${D} text-3xl font-semibold text-slate-900 sm:text-4xl`}
+            >
+              Karyawan
+            </h2>
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-slate-500">
+              Kelola akun, hak akses, dan divisi seluruh anggota perusahaan.
+            </p>
+          </div>
 
-              <button
-                onClick={() => {
-                  setShowForm(!showForm);
-                  setError("");
-                }}
-                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3.5 text-sm font-black text-indigo-700 shadow-xl shadow-black/10 transition hover:-translate-y-0.5 hover:bg-indigo-50 sm:w-auto"
-              >
-                <span className="text-lg">{showForm ? "×" : "+"}</span>
-                {showForm ? "Tutup Form" : "Tambah Karyawan"}
-              </button>
+          <button
+            onClick={openCreate}
+            disabled={!companyId}
+            className={`${btnPrimary} w-full sm:w-auto`}
+          >
+            <Icon d={ICONS.plus} />
+            Tambah karyawan
+          </button>
+        </section>
+
+        {loadError && (
+          <div
+            role="alert"
+            className="mb-5 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-700"
+          >
+            {loadError}
+          </div>
+        )}
+
+        {/* ================= RINGKASAN ================= */}
+
+        <section className="grid gap-6 lg:grid-cols-5">
+          {/* ROLE */}
+
+          <div className={`${card} p-5 sm:p-6 lg:col-span-2`}>
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+              {(["owner", "admin", "employee"] as Role[]).map(
+                (role) =>
+                  roleCounts[role] > 0 && (
+                    <div
+                      key={role}
+                      title={`${ROLES[role].label}: ${roleCounts[role]}`}
+                      style={{
+                        width: `${(roleCounts[role] / roleCounts.all) * 100}%`,
+                        backgroundColor: ROLES[role].color,
+                      }}
+                    />
+                  )
+              )}
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:min-w-[330px]">
-              <MiniStat value={employees.length} label="Total" icon="👥" />
-              <MiniStat value={totalAdmins} label="Admin" icon="🛡️" />
-              <MiniStat value={totalEmployees} label="Employee" icon="💼" />
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {roleTiles.map((tile) => {
+                const active = filterRole === tile.key;
+
+                return (
+                  <button
+                    key={tile.key}
+                    onClick={() => setFilterRole(tile.key)}
+                    aria-pressed={active}
+                    className={`rounded-xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0E1A3A]/30 ${
+                      active
+                        ? "border-[#0E1A3A] bg-slate-50"
+                        : "border-slate-200/70 bg-white hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 text-sm text-slate-500">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: tile.color }}
+                      />
+                      {tile.label}
+                    </span>
+
+                    <span
+                      className={`${D} mt-1 block text-3xl font-semibold text-slate-900`}
+                    >
+                      {roleCounts[tile.key]}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+          </div>
+
+          {/* DIVISI (tablet ke atas) */}
+
+          <div className={`${card} hidden p-5 sm:p-6 md:block lg:col-span-3`}>
+            <h3 className={`${D} text-xl font-semibold text-slate-900`}>
+              Anggota per divisi
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Klik salah satu divisi untuk memfilter daftar.
+            </p>
+
+            {divisionBars.length === 0 ? (
+              <p className="mt-6 text-sm text-slate-400">Belum ada data.</p>
+            ) : (
+              <ul className="mt-4 space-y-1">
+                {divisionBars.map((row) => {
+                  const active = filterDivision === row.key;
+
+                  return (
+                    <li key={row.key}>
+                      <button
+                        onClick={() =>
+                          setFilterDivision((prev) =>
+                            prev === row.key ? "all" : row.key
+                          )
+                        }
+                        aria-pressed={active}
+                        className={`grid w-full grid-cols-[7.5rem_1fr_2rem] items-center gap-3 rounded-lg px-2 py-1.5 text-left transition hover:bg-slate-50 ${
+                          active ? "bg-slate-50" : ""
+                        }`}
+                      >
+                        <span className="truncate text-sm font-medium text-slate-700">
+                          {row.label}
+                        </span>
+
+                        <span className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                          <span
+                            className="block h-full rounded-full bg-[#0E1A3A] transition-all"
+                            style={{
+                              width: `${(row.count / maxBar) * 100}%`,
+                              opacity:
+                                filterDivision === "all" || active ? 1 : 0.35,
+                            }}
+                          />
+                        </span>
+
+                        <span className="text-right text-sm font-semibold tabular-nums text-slate-800">
+                          {row.count}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         </section>
 
-        {/* CREATE FORM */}
-        {showForm && (
-          <section className="mb-7 overflow-hidden rounded-[28px] border border-indigo-100 bg-white shadow-[0_20px_60px_-35px_rgba(79,70,229,.35)]">
-            <div className="border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 via-white to-blue-50/70 px-5 py-5 sm:px-7">
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-lg text-white shadow-lg shadow-indigo-500/20">
-                  ✨
-                </div>
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-indigo-500">
-                    Create account
-                  </p>
-                  <h2 className="mt-1 text-xl font-black tracking-tight text-slate-900">
-                    Tambah Karyawan Baru
-                  </h2>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Buat akun dan tentukan hak akses serta divisinya.
-                  </p>
-                </div>
-              </div>
-            </div>
+        {/* ================= DAFTAR ================= */}
 
-            <div className="p-5 sm:p-7">
-              {error && (
-                <div className="mb-5 flex items-start gap-3 rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm font-bold text-rose-700">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-white">!</span>
-                  <span>{error}</span>
-                </div>
-              )}
+        <section className="mt-8">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3
+              className={`${D} text-xl font-semibold text-slate-900 sm:text-2xl`}
+            >
+              Daftar karyawan
+            </h3>
 
-              <form onSubmit={handleCreate} className="grid gap-4 md:grid-cols-2">
-                <Input
-                  label="Nama Lengkap"
-                  value={name}
-                  onChange={setName}
-                  placeholder="Contoh: Johan Pratama"
-                  icon="👤"
-                />
-
-                <Input
-                  label="Email"
-                  type="email"
-                  value={email}
-                  onChange={setEmail}
-                  placeholder="nama@perusahaan.com"
-                  icon="✉️"
-                />
-
-                <Input
-                  label="Password"
-                  type="password"
-                  value={password}
-                  onChange={setPassword}
-                  placeholder="Minimal 6 karakter"
-                  icon="🔐"
-                />
-
-                <Select
-                  label="Hak Akses"
-                  value={role}
-                  onChange={(v) => setRole(v as "admin" | "employee")}
-                  icon="🛡️"
-                >
-                  <option value="employee">Employee — akses karyawan</option>
-                  {currentRole === "owner" && (
-                    <option value="admin">Admin — kelola operasional</option>
-                  )}
-                </Select>
-
-                <Select
-                  label="Divisi"
-                  value={division}
-                  onChange={setDivision}
-                  icon="🏢"
-                >
-                  <option value="">Pilih Divisi</option>
-                  {DIVISIONS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </Select>
-
-                <div className="flex flex-col justify-end gap-2 md:col-span-2 md:flex-row">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowForm(false);
-                      setError("");
-                    }}
-                    className="rounded-2xl border border-slate-200 bg-white px-6 py-3.5 text-sm font-black text-slate-600 transition hover:bg-slate-50"
-                  >
-                    Batal
-                  </button>
-                  <button
-                    disabled={saving}
-                    className="rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 px-7 py-3.5 text-sm font-black text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {saving ? "Membuat akun..." : "✓ Simpan Karyawan"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </section>
-        )}
-
-        {/* DATA HEADER */}
-        <section className="mb-4">
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-500">
-                Team Directory
-              </p>
-              <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">
-                Daftar Karyawan
-              </h2>
-              <p className="mt-1 text-xs text-slate-400">
-                Cari dan kelola anggota berdasarkan role atau divisi.
-              </p>
-            </div>
-            <span className="w-fit rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-black text-slate-600 shadow-sm">
-              {filteredEmployees.length} dari {employees.length} orang
+            <span className="shrink-0 rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+              {filtered.length} dari {employees.length} orang
             </span>
           </div>
 
           {/* FILTER */}
-          <div className="rounded-[24px] border border-slate-200/80 bg-white p-3 shadow-[0_12px_35px_-28px_rgba(15,23,42,.35)] sm:p-4">
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-              <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-slate-400">⌕</span>
+
+          <div className={`${card} mb-4 p-3 sm:p-4`}>
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+              <label className="relative block">
+                <span className="sr-only">Cari nama atau email</span>
+
+                <Icon
+                  d={ICONS.search}
+                  className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                />
+
                 <input
+                  type="search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Cari nama atau email..."
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50/70 pl-10 pr-4 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50"
+                  placeholder="Cari nama atau email"
+                  className={`${inputCls} pl-10`}
                 />
+              </label>
+
+              <div className="flex gap-2">
+                <div className="relative flex-1 sm:w-52 sm:flex-none">
+                  <label htmlFor="filter-division" className="sr-only">
+                    Filter divisi
+                  </label>
+
+                  <select
+                    id="filter-division"
+                    value={filterDivision}
+                    onChange={(e) => setFilterDivision(e.target.value)}
+                    className={`${inputCls} appearance-none pr-10`}
+                  >
+                    <option value="all">Semua divisi</option>
+                    {divisionOptions.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                    {noDivisionCount > 0 && (
+                      <option value={NONE}>Belum ada divisi</option>
+                    )}
+                  </select>
+
+                  <Icon
+                    d={ICONS.chevDown}
+                    className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                  />
+                </div>
+
+                {hasFilter && (
+                  <button
+                    onClick={resetFilter}
+                    className="h-12 shrink-0 rounded-xl px-3 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 sm:h-11"
+                  >
+                    Reset
+                  </button>
+                )}
               </div>
-
-              <select
-                value={filterRole}
-                onChange={(e) => setFilterRole(e.target.value as "all" | Role)}
-                className="h-11 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs font-bold text-slate-600 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50"
-              >
-                <option value="all">Semua Role</option>
-                <option value="owner">Owner</option>
-                <option value="admin">Admin</option>
-                <option value="employee">Employee</option>
-              </select>
-
-              <select
-                value={filterDivision}
-                onChange={(e) => setFilterDivision(e.target.value)}
-                className="h-11 rounded-xl border border-slate-200 bg-slate-50/70 px-3 text-xs font-bold text-slate-600 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50"
-              >
-                <option value="all">Semua Divisi</option>
-                {DIVISIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
             </div>
           </div>
-        </section>
 
-        {/* MOBILE */}
-        <div className="space-y-3 md:hidden">
-          {filteredEmployees.length === 0 ? (
-            <Empty hasFilter={Boolean(search || filterRole !== "all" || filterDivision !== "all")} />
-          ) : (
-            filteredEmployees.map((employee) => (
-              <EmployeeCard
-                key={employee.id}
-                employee={employee}
-                canEdit={canEdit(employee)}
-                canDelete={canDelete(employee)}
-                onEdit={() => openEdit(employee)}
-                onDelete={() => handleDelete(employee.id, employee.full_name)}
-              />
-            ))
-          )}
-        </div>
+          {/* KARTU: HP & tablet */}
 
-        {/* DESKTOP */}
-        <div className="hidden overflow-hidden rounded-[26px] border border-slate-200/80 bg-white shadow-[0_18px_55px_-35px_rgba(15,23,42,.35)] md:block">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px]">
+          <div className="grid gap-3 sm:grid-cols-2 lg:hidden">
+            {filtered.length === 0 ? (
+              <div className={`${card} sm:col-span-2`}>
+                <EmptyState hasFilter={hasFilter} onReset={resetFilter} />
+              </div>
+            ) : (
+              filtered.map((employee) => {
+                const editable = canEdit(employee);
+                const deletable = canDelete(employee);
+
+                return (
+                  <div key={employee.id} className={`${card} overflow-hidden`}>
+                    <div className="flex items-start gap-3 p-4">
+                      <Avatar name={employee.full_name} />
+
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[15px] font-semibold text-slate-900">
+                          {employee.full_name}
+                        </p>
+
+                        <p className="truncate text-sm text-slate-500">
+                          {employee.email}
+                        </p>
+
+                        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                          <RoleBadge role={employee.role} />
+                          <DivisionTag division={employee.division} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {(editable || deletable) && (
+                      <RowActions
+                        variant="card"
+                        canEdit={editable}
+                        canDelete={deletable}
+                        onEdit={() => openEdit(employee)}
+                        onDelete={() => setDeleteTarget(employee)}
+                      />
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* TABEL: layar lebar */}
+
+          <div className={`${card} hidden overflow-hidden lg:block`}>
+            <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/80">
-                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                    Profil Karyawan
+                <tr className="border-b border-slate-100 bg-slate-50/70 text-xs font-semibold text-slate-400">
+                  <th scope="col" className="px-6 py-3.5">
+                    Karyawan
                   </th>
-                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
-                    Kontak & Akses
+                  <th scope="col" className="px-4 py-3.5">
+                    Email
                   </th>
-                  <th className="px-6 py-4 text-left text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                  <th scope="col" className="px-4 py-3.5">
+                    Role
+                  </th>
+                  <th scope="col" className="px-4 py-3.5">
                     Divisi
                   </th>
-                  <th className="px-6 py-4 text-right text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                  <th scope="col" className="px-6 py-3.5 text-right">
                     Aksi
                   </th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {filteredEmployees.length === 0 ? (
+                {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={4}>
-                      <Empty hasFilter={Boolean(search || filterRole !== "all" || filterDivision !== "all")} />
+                    <td colSpan={5}>
+                      <EmptyState hasFilter={hasFilter} onReset={resetFilter} />
                     </td>
                   </tr>
                 ) : (
-                  filteredEmployees.map((employee) => (
-                    <tr key={employee.id} className="group transition hover:bg-indigo-50/30">
-                      <td className="px-6 py-5">
+                  filtered.map((employee) => (
+                    <tr
+                      key={employee.id}
+                      className="transition-colors hover:bg-slate-50/60"
+                    >
+                      <td className="px-6 py-3.5">
                         <div className="flex items-center gap-3">
                           <Avatar name={employee.full_name} />
-                          <div className="min-w-0">
-                            <p className="truncate font-extrabold text-slate-800">{employee.full_name}</p>
-                            <p className="mt-0.5 text-[11px] text-slate-400">ID • {employee.id.slice(0, 8)}</p>
-                          </div>
+
+                          <p className="max-w-[14rem] truncate text-sm font-semibold text-slate-900">
+                            {employee.full_name}
+                          </p>
                         </div>
                       </td>
 
-                      <td className="px-6 py-5">
-                        <p className="max-w-[260px] truncate text-sm font-semibold text-slate-600">{employee.email}</p>
-                        <div className="mt-2">
-                          <RoleBadge role={employee.role} />
-                        </div>
+                      <td className="px-4 py-3.5">
+                        <p className="max-w-[16rem] truncate text-sm text-slate-600">
+                          {employee.email}
+                        </p>
                       </td>
 
-                      <td className="px-6 py-5">
-                        <DivisionBadge division={employee.division} />
+                      <td className="px-4 py-3.5">
+                        <RoleBadge role={employee.role} />
                       </td>
 
-                      <td className="px-6 py-5">
-                        <div className="flex justify-end gap-2 opacity-90 transition group-hover:opacity-100">
-                          {canEdit(employee) && (
-                            <button
-                              onClick={() => openEdit(employee)}
-                              className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-2.5 text-xs font-black text-indigo-700 transition hover:-translate-y-0.5 hover:bg-indigo-100"
-                            >
-                              ✎ Edit
-                            </button>
-                          )}
-                          {canDelete(employee) && (
-                            <button
-                              onClick={() => handleDelete(employee.id, employee.full_name)}
-                              className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-100"
-                            >
-                              Hapus
-                            </button>
-                          )}
-                        </div>
+                      <td className="px-4 py-3.5">
+                        <DivisionTag division={employee.division} />
+                      </td>
+
+                      <td className="px-6 py-3.5">
+                        <RowActions
+                          variant="table"
+                          canEdit={canEdit(employee)}
+                          canDelete={canDelete(employee)}
+                          onEdit={() => openEdit(employee)}
+                          onDelete={() => setDeleteTarget(employee)}
+                        />
                       </td>
                     </tr>
                   ))
@@ -706,364 +1315,329 @@ export default function EmployeesPage() {
               </tbody>
             </table>
           </div>
-        </div>
-
-        <p className="mt-5 text-center text-[10px] font-semibold text-slate-400">
-          Data karyawan dikelola berdasarkan perusahaan yang sedang aktif.
-        </p>
+        </section>
       </div>
 
-      {/* EDIT MODAL */}
-      {editing && (
-        <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-md sm:items-center sm:p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) closeEdit();
-          }}
+      {/* ================= MODAL TAMBAH ================= */}
+
+      {showCreate && (
+        <Modal
+          title="Tambah karyawan"
+          subtitle="Buat akun baru dan tentukan hak akses serta divisinya."
+          onClose={closeCreate}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={closeCreate}
+                disabled={busy}
+                className={btnGhost}
+              >
+                Batal
+              </button>
+
+              <button
+                type="submit"
+                form="create-form"
+                disabled={busy}
+                className={btnPrimary}
+              >
+                {busy ? "Membuat akun..." : "Simpan karyawan"}
+              </button>
+            </>
+          }
         >
           <form
-            onSubmit={saveEdit}
-            className="max-h-[92vh] w-full overflow-y-auto rounded-t-[30px] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[30px] sm:p-7"
+            id="create-form"
+            onSubmit={handleCreate}
+            noValidate
+            className="space-y-4"
           >
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <Avatar name={editing.full_name} size="large" />
-                <div className="min-w-0">
-                  <p className="text-[9px] font-black uppercase tracking-[0.18em] text-indigo-500">Edit Karyawan</p>
-                  <h3 className="mt-1 truncate text-lg font-black text-slate-900">{editing.full_name}</h3>
-                  <p className="truncate text-xs text-slate-400">{editing.email}</p>
-                </div>
+            {formError && (
+              <div
+                role="alert"
+                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700"
+              >
+                {formError}
               </div>
+            )}
+
+            <Field label="Nama lengkap" htmlFor="c-name">
+              <input
+                id="c-name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="Contoh: Johan Pratama"
+                autoComplete="off"
+                className={inputCls}
+              />
+            </Field>
+
+            <Field label="Email" htmlFor="c-email">
+              <input
+                id="c-email"
+                type="email"
+                inputMode="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="off"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="nama@perusahaan.com"
+                className={inputCls}
+              />
+            </Field>
+
+            <Field
+              label="Password"
+              htmlFor="c-password"
+              hint="Minimal 6 karakter."
+            >
+              <div className="relative">
+                <input
+                  id="c-password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(e) =>
+                    setForm({ ...form, password: e.target.value })
+                  }
+                  placeholder="Password akun baru"
+                  className={`${inputCls} pr-12`}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={
+                    showPassword ? "Sembunyikan password" : "Tampilkan password"
+                  }
+                  className="absolute right-1.5 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <Icon d={showPassword ? ICONS.eyeOff : ICONS.eye} />
+                </button>
+              </div>
+            </Field>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Hak akses" htmlFor="c-role">
+                <SelectField
+                  id="c-role"
+                  value={form.role}
+                  onChange={(v) =>
+                    setForm({ ...form, role: v as EditableRole })
+                  }
+                >
+                  <option value="employee">Employee</option>
+                  {currentRole === "owner" && (
+                    <option value="admin">Admin</option>
+                  )}
+                </SelectField>
+              </Field>
+
+              <Field label="Divisi" htmlFor="c-division">
+                <SelectField
+                  id="c-division"
+                  value={form.division}
+                  onChange={(v) => setForm({ ...form, division: v })}
+                >
+                  <option value="">Pilih divisi</option>
+                  {DIVISIONS.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </SelectField>
+              </Field>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ================= MODAL EDIT ================= */}
+
+      {editing && (
+        <Modal
+          title="Edit karyawan"
+          onClose={closeEdit}
+          footer={
+            <>
               <button
                 type="button"
                 onClick={closeEdit}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-xl font-bold text-slate-500 transition hover:bg-slate-200"
+                disabled={busy}
+                className={btnGhost}
               >
-                ×
+                Batal
               </button>
+
+              <button
+                type="submit"
+                form="edit-form"
+                disabled={busy || !hasChanges || !passwordValid}
+                className={btnPrimary}
+              >
+                {busy ? "Menyimpan..." : "Simpan perubahan"}
+              </button>
+            </>
+          }
+        >
+          <form id="edit-form" onSubmit={saveEdit} className="space-y-4">
+            <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <Avatar name={editing.full_name} large />
+
+              <div className="min-w-0">
+                <p className="break-words text-[15px] font-semibold text-slate-900">
+                  {editing.full_name}
+                </p>
+                <p className="break-all text-sm text-slate-500">
+                  {editing.email}
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-5">
-              {editing.role !== "owner" && (
-                <Select
-                  label="Role"
-                  value={editRole}
-                  onChange={(v) => setEditRole(v as "admin" | "employee")}
-                  disabled={currentRole === "admin"}
-                  icon="🛡️"
-                >
-                  <option value="employee">Employee — akses karyawan</option>
-                  {currentRole === "owner" && <option value="admin">Admin — kelola operasional</option>}
-                </Select>
-              )}
-
-              <Select
-                label="Divisi"
-                value={editDivision}
-                onChange={setEditDivision}
-                icon="🏢"
+            {editing.role !== "owner" && (
+              <Field
+                label="Role"
+                htmlFor="e-role"
+                hint={
+                  currentRole === "admin"
+                    ? "Hanya owner yang dapat mengubah role."
+                    : undefined
+                }
               >
-                <option value="">Pilih Divisi</option>
-                {DIVISIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-              </Select>
+                <SelectField
+                  id="e-role"
+                  value={editForm.role}
+                  onChange={(v) =>
+                    setEditForm({ ...editForm, role: v as EditableRole })
+                  }
+                  disabled={currentRole === "admin"}
+                >
+                  <option value="employee">Employee</option>
+                  {currentRole === "owner" && (
+                    <option value="admin">Admin</option>
+                  )}
+                </SelectField>
+              </Field>
+            )}
 
-              <div>
-                <label className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-                  Password Baru
-                </label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm">🔐</span>
-                  <input
-                    type="password"
-                    value={editPassword}
-                    onChange={(e) => setEditPassword(e.target.value)}
-                    placeholder="Kosongkan jika tidak diubah"
-                    className={`h-12 w-full rounded-2xl border bg-white pl-11 pr-4 text-sm outline-none transition focus:ring-4 ${
-                      editPassword && editPassword.length < 6
-                        ? "border-rose-400 focus:ring-rose-50"
-                        : "border-slate-200 focus:border-indigo-500 focus:ring-indigo-50"
-                    }`}
-                  />
-                </div>
-                {editPassword && editPassword.length < 6 && (
-                  <p className="mt-2 text-xs font-bold text-rose-600">⚠️ Password minimal 6 karakter.</p>
-                )}
-              </div>
+            <Field label="Divisi" htmlFor="e-division">
+              <SelectField
+                id="e-division"
+                value={editForm.division}
+                onChange={(v) => setEditForm({ ...editForm, division: v })}
+              >
+                <option value="">Belum ada divisi</option>
+                {editDivisionOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </SelectField>
+            </Field>
 
-              <div className={`rounded-2xl border p-4 text-xs font-bold ${
-                hasChanges()
-                  ? "border-emerald-100 bg-emerald-50 text-emerald-700"
-                  : "border-slate-100 bg-slate-50 text-slate-400"
-              }`}>
-                {hasChanges() ? "✓ Ada perubahan yang siap disimpan." : "Belum ada perubahan."}
-              </div>
+            <Field
+              label="Password baru"
+              htmlFor="e-password"
+              hint={
+                editPassword && !passwordValid ? (
+                  <span className="font-semibold text-rose-600">
+                    Password minimal 6 karakter.
+                  </span>
+                ) : (
+                  "Kosongkan jika tidak ingin mengubah."
+                )
+              }
+            >
+              <div className="relative">
+                <input
+                  id="e-password"
+                  type={showEditPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  value={editForm.password}
+                  onChange={(e) =>
+                    setEditForm({ ...editForm, password: e.target.value })
+                  }
+                  placeholder="Password baru"
+                  className={`${inputCls} pr-12 ${
+                    editPassword && !passwordValid
+                      ? "border-rose-400 focus:border-rose-400 focus:ring-rose-100"
+                      : ""
+                  }`}
+                />
 
-              <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
                 <button
                   type="button"
-                  onClick={closeEdit}
-                  disabled={saving}
-                  className="rounded-2xl border border-slate-200 px-5 py-3.5 text-sm font-black text-slate-600 transition hover:bg-slate-50"
+                  onClick={() => setShowEditPassword((v) => !v)}
+                  aria-label={
+                    showEditPassword
+                      ? "Sembunyikan password"
+                      : "Tampilkan password"
+                  }
+                  className="absolute right-1.5 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
                 >
-                  Batal
-                </button>
-                <button
-                  disabled={saving || !hasChanges() || !passwordValid}
-                  className="rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-600 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:bg-none disabled:text-slate-400 disabled:shadow-none"
-                >
-                  {saving ? "Menyimpan..." : "✓ Simpan Perubahan"}
+                  <Icon d={showEditPassword ? ICONS.eyeOff : ICONS.eye} />
                 </button>
               </div>
-            </div>
+            </Field>
+
+            <p
+              className={`rounded-xl px-4 py-3 text-sm font-medium ${
+                hasChanges
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-slate-50 text-slate-400"
+              }`}
+            >
+              {hasChanges
+                ? "Ada perubahan yang siap disimpan."
+                : "Belum ada perubahan."}
+            </p>
           </form>
-        </div>
+        </Modal>
+      )}
+
+      {/* ================= MODAL HAPUS ================= */}
+
+      {deleteTarget && (
+        <Modal
+          title="Hapus karyawan?"
+          maxW="sm:max-w-md"
+          onClose={() => {
+            if (!busy) setDeleteTarget(null);
+          }}
+          footer={
+            <>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                disabled={busy}
+                className={btnGhost}
+              >
+                Batal
+              </button>
+
+              <button
+                onClick={confirmDelete}
+                disabled={busy}
+                className={btnDanger}
+              >
+                {busy ? "Menghapus..." : "Hapus permanen"}
+              </button>
+            </>
+          }
+        >
+          <p className="text-sm leading-relaxed text-slate-600">
+            Akun{" "}
+            <span className="font-semibold text-slate-900">
+              {deleteTarget.full_name}
+            </span>{" "}
+            <span className="break-all text-slate-500">
+              ({deleteTarget.email})
+            </span>{" "}
+            akan dihapus permanen dan tidak bisa dikembalikan.
+          </p>
+        </Modal>
       )}
     </main>
-  );
-}
-
-/* =========================================================
-   COMPONENT KECIL
-========================================================= */
-
-function MiniStat({
-  value,
-  label,
-  icon,
-}: {
-  value: number;
-  label: string;
-  icon: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/10 p-3 backdrop-blur-xl sm:p-4">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm">{icon}</span>
-        <span className="text-xl font-black sm:text-2xl">{value}</span>
-      </div>
-      <p className="mt-2 text-[9px] font-black uppercase tracking-wider text-indigo-100/60">
-        {label}
-      </p>
-    </div>
-  );
-}
-
-function Input({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  icon,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  type?: string;
-  icon?: string;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-        {label}
-      </label>
-      <div className="relative">
-        {icon && (
-          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm">
-            {icon}
-          </span>
-        )}
-        <input
-          type={type}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          required
-          className={`h-12 w-full rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-medium text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50 ${
-            icon ? "pl-11 pr-4" : "px-4"
-          }`}
-        />
-      </div>
-    </div>
-  );
-}
-
-function Select({
-  label,
-  value,
-  onChange,
-  children,
-  disabled = false,
-  icon,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: React.ReactNode;
-  disabled?: boolean;
-  icon?: string;
-}) {
-  return (
-    <div>
-      <label className="mb-2 block text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-        {label}
-      </label>
-      <div className="relative">
-        {icon && (
-          <span className="pointer-events-none absolute left-4 top-1/2 z-10 -translate-y-1/2 text-sm">
-            {icon}
-          </span>
-        )}
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          className={`h-12 w-full appearance-none rounded-2xl border border-slate-200 bg-slate-50/50 text-sm font-bold text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-50 disabled:bg-slate-100 ${
-            icon ? "pl-11 pr-10" : "px-4 pr-10"
-          }`}
-        >
-          {children}
-        </select>
-        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-xs text-slate-400">
-          ▾
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function Avatar({
-  name,
-  size = "normal",
-}: {
-  name: string;
-  size?: "normal" | "large";
-}) {
-  return (
-    <div
-      className={`flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 font-black text-white shadow-md shadow-indigo-500/15 ${
-        size === "large" ? "h-12 w-12 text-base" : "h-11 w-11 text-sm"
-      }`}
-    >
-      {name.charAt(0).toUpperCase()}
-    </div>
-  );
-}
-
-function RoleBadge({ role }: { role: Role }) {
-  const styles: Record<Role, string> = {
-    owner: "border-amber-100 bg-amber-50 text-amber-700",
-    admin: "border-indigo-100 bg-indigo-50 text-indigo-700",
-    employee: "border-emerald-100 bg-emerald-50 text-emerald-700",
-  };
-
-  const icons: Record<Role, string> = {
-    owner: "👑",
-    admin: "🛡️",
-    employee: "●",
-  };
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${styles[role]}`}
-    >
-      <span>{icons[role]}</span>
-      {role}
-    </span>
-  );
-}
-
-function DivisionBadge({ division }: { division?: string | null }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-violet-700">
-      <span>◆</span>
-      {division || "Belum ada divisi"}
-    </span>
-  );
-}
-
-function EmployeeCard({
-  employee,
-  canEdit,
-  canDelete,
-  onEdit,
-  onDelete,
-}: {
-  employee: Employee;
-  canEdit: boolean;
-  canDelete: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-[0_15px_45px_-32px_rgba(15,23,42,.35)]">
-      <div className="p-4">
-        <div className="flex items-start gap-3">
-          <Avatar name={employee.full_name} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <p className="truncate font-black text-slate-800">
-                  {employee.full_name}
-                </p>
-                <p className="mt-1 truncate text-[11px] font-medium text-slate-400">
-                  {employee.email}
-                </p>
-              </div>
-              <RoleBadge role={employee.role} />
-            </div>
-
-            <div className="mt-3">
-              <DivisionBadge division={employee.division} />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {(canEdit || canDelete) && (
-        <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-slate-50/60 p-3">
-          {canEdit && (
-            <button
-              onClick={onEdit}
-              className={`rounded-xl bg-indigo-50 py-2.5 text-xs font-black text-indigo-700 transition hover:bg-indigo-100 ${
-                !canDelete ? "col-span-2" : ""
-              }`}
-            >
-              ✎ Edit Data
-            </button>
-          )}
-
-          {canDelete && (
-            <button
-              onClick={onDelete}
-              className={`rounded-xl bg-rose-50 py-2.5 text-xs font-black text-rose-700 transition hover:bg-rose-100 ${
-                !canEdit ? "col-span-2" : ""
-              }`}
-            >
-              Hapus
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Empty({ hasFilter = false }: { hasFilter?: boolean }) {
-  return (
-    <div className="px-6 py-14 text-center">
-      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] bg-slate-100 text-2xl shadow-inner">
-        {hasFilter ? "⌕" : "👥"}
-      </div>
-      <p className="mt-4 font-black text-slate-700">
-        {hasFilter ? "Data tidak ditemukan" : "Belum ada karyawan"}
-      </p>
-      <p className="mx-auto mt-1 max-w-sm text-xs leading-5 text-slate-400">
-        {hasFilter
-          ? "Coba ubah kata kunci atau filter yang digunakan."
-          : "Tambahkan karyawan menggunakan tombol Tambah Karyawan."}
-      </p>
-    </div>
   );
 }

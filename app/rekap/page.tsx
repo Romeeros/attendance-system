@@ -1,13 +1,95 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Bricolage_Grotesque, Figtree } from "next/font/google";
+
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  RadialBarChart,
+  RadialBar,
+  PolarAngleAxis,
+} from "recharts";
+
 import { supabase } from "@/lib/supabase";
 
-/* =========================================================
-   TYPES
-========================================================= */
+// =========================================================
+// FONT & TOKEN DESAIN (sama dengan halaman lainnya)
+// =========================================================
+
+const fontDisplay = Bricolage_Grotesque({
+  subsets: ["latin"],
+  variable: "--font-display",
+});
+
+const fontBody = Figtree({
+  subsets: ["latin"],
+  variable: "--font-body",
+});
+
+const FONT_VARS = `${fontDisplay.variable} ${fontBody.variable}`;
+const D = "font-[family-name:var(--font-display)]";
+const BASE = `${FONT_VARS} font-[family-name:var(--font-body)]`;
+
+const card = "rounded-2xl border border-slate-200/70 bg-white";
+
+const MONTHS = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
+
+const TIME_ZONE = "Asia/Jakarta";
+
+type DayKey = "present" | "late" | "sick" | "leave" | "absent";
+
+const DAY_KEYS: DayKey[] = ["present", "late", "sick", "leave", "absent"];
+
+const META: Record<DayKey, { label: string; color: string; text: string }> = {
+  present: { label: "Tepat waktu", color: "#10B981", text: "text-emerald-600" },
+  late: { label: "Terlambat", color: "#EAB308", text: "text-yellow-600" },
+  sick: { label: "Sakit", color: "#F97316", text: "text-orange-600" },
+  leave: { label: "Izin", color: "#8B5CF6", text: "text-violet-600" },
+  absent: { label: "Alpa", color: "#F43F5E", text: "text-rose-600" },
+};
+
+type SortKey = "absent" | "present" | "division" | "name";
+
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: "absent", label: "Tidak hadir terbanyak" },
+  { key: "present", label: "Hadir terbanyak" },
+  { key: "division", label: "Divisi" },
+  { key: "name", label: "Nama A–Z" },
+];
+
+const ICONS = {
+  back: "M19 12H5m7-7-7 7 7 7",
+  chevL: "m15 18-6-6 6-6",
+  chevR: "m9 18 6-6-6-6",
+  print:
+    "M6 9V3h12v6M6 18H4a1 1 0 0 1-1-1v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1h-2M6 14h12v7H6z",
+  chevDown: "m6 9 6 6 6-6",
+};
+
+// =========================================================
+// TIPE
+// =========================================================
 
 interface Employee {
   id: string;
@@ -22,9 +104,7 @@ interface Attendance {
   status: string;
   created_at: string;
   check_in: string | null;
-  check_out: string | null;
-  reason: string | null;
-  approval_status: "pending" | "approved" | "rejected" | string | null;
+  approval_status: string | null;
   rejection_reason: string | null;
 }
 
@@ -48,44 +128,29 @@ interface EmployeeSummary {
   rejected: number;
   rejectionReasons: string[];
 
-  // Total masuk = Hadir + Terlambat yang tidak ditolak
+  // Total masuk = Tepat waktu + Terlambat (yang tidak ditolak)
   totalAttendances: number;
-
   activeDays: number;
-  holidayDays: number;
 
-  accountBeforeMonth: boolean;
   accountCreatedInMonth: boolean;
   accountAfterMonth: boolean;
-
   monthNotStarted: boolean;
-  hasAttendance: boolean;
 }
 
-/* =========================================================
-   CONSTANTS
-========================================================= */
+interface DailyRow {
+  key: string;
+  label: string;
+  full: string;
+  present: number;
+  late: number;
+  sick: number;
+  leave: number;
+  absent: number;
+}
 
-const MONTHS = [
-  "Januari",
-  "Februari",
-  "Maret",
-  "April",
-  "Mei",
-  "Juni",
-  "Juli",
-  "Agustus",
-  "September",
-  "Oktober",
-  "November",
-  "Desember",
-];
-
-const TIME_ZONE = "Asia/Jakarta";
-
-/* =========================================================
-   DASHBOARD PATH
-========================================================= */
+// =========================================================
+// HELPER TANGGAL
+// =========================================================
 
 const getDashboardPath = (role: string) => {
   if (role === "owner") return "/owner/dashboard";
@@ -93,15 +158,8 @@ const getDashboardPath = (role: string) => {
   return "/dashboard";
 };
 
-/* =========================================================
-   DATE HELPERS
-========================================================= */
-
 function getDateKey(date: string | Date) {
-  const value =
-    typeof date === "string"
-      ? new Date(date)
-      : date;
+  const value = typeof date === "string" ? new Date(date) : date;
 
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: TIME_ZONE,
@@ -111,2582 +169,1568 @@ function getDateKey(date: string | Date) {
   }).format(value);
 }
 
-function getTodayKey() {
-  return getDateKey(new Date());
-}
+const getTodayKey = () => getDateKey(new Date());
 
-function createLocalDate(
-  year: number,
-  month: number,
-  day: number
-) {
-  return new Date(year, month - 1, day);
+const createLocalDate = (year: number, month: number, day: number) =>
+  new Date(year, month - 1, day);
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+function isWeekendKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const dayOfWeek = createLocalDate(year, month, day).getDay();
+
+  return dayOfWeek === 0 || dayOfWeek === 6;
 }
 
 function formatCreatedDate(date: string) {
-  return new Date(date).toLocaleDateString(
-    "id-ID",
-    {
-      timeZone: TIME_ZONE,
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    }
-  );
+  return new Date(date).toLocaleDateString("id-ID", {
+    timeZone: TIME_ZONE,
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 }
 
-function getDatesInMonth(
-  year: number,
-  month: number
-) {
-  const daysInMonth = new Date(
-    year,
-    month,
-    0
-  ).getDate();
+function getDatesInMonth(year: number, month: number) {
+  const daysInMonth = new Date(year, month, 0).getDate();
 
-  return Array.from(
-    { length: daysInMonth },
-    (_, index) => {
-      const day = index + 1;
+  return Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
 
-      return {
-        day,
-        date: createLocalDate(
-          year,
-          month,
-          day
-        ),
-        key: `${year}-${String(month).padStart(
-          2,
-          "0"
-        )}-${String(day).padStart(2, "0")}`,
-      };
-    }
-  );
+    return { day, key: `${year}-${pad(month)}-${pad(day)}` };
+  });
 }
 
-function isWeekend(date: Date) {
-  const day = date.getDay();
-
-  return day === 0 || day === 6;
-}
-
-function isWeekendKey(dateKey: string) {
-  const [year, month, day] = dateKey
-    .split("-")
-    .map(Number);
-
-  return isWeekend(
-    createLocalDate(
-      year,
-      month,
-      day
-    )
-  );
-}
-
-/**
- * Mendapatkan batas bulan berdasarkan
- * timezone Asia/Jakarta lalu dikonversi
- * ke ISO UTC untuk query Supabase.
- */
-function getMonthUtcRange(
-  year: number,
-  month: number
-) {
-  const start = new Date(
-    `${year}-${String(month).padStart(
-      2,
-      "0"
-    )}-01T00:00:00+07:00`
-  );
-
-  const nextYear =
-    month === 12 ? year + 1 : year;
-
-  const nextMonth =
-    month === 12 ? 1 : month + 1;
-
-  const end = new Date(
-    `${nextYear}-${String(nextMonth).padStart(
-      2,
-      "0"
-    )}-01T00:00:00+07:00`
-  );
+// Batas bulan menurut Asia/Jakarta, dikonversi ke ISO UTC untuk query
+function getMonthRange(year: number, month: number) {
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
 
   return {
-    start,
-    end,
+    startIso: new Date(`${year}-${pad(month)}-01T00:00:00+07:00`).toISOString(),
+    endIso: new Date(
+      `${nextYear}-${pad(nextMonth)}-01T00:00:00+07:00`
+    ).toISOString(),
+    startDate: `${year}-${pad(month)}-01`,
+    endDate: `${nextYear}-${pad(nextMonth)}-01`,
   };
 }
 
-/* =========================================================
-   PAGE
-========================================================= */
-
-export default function MonthlyReportPage() {
-  const router = useRouter();
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [userRole, setUserRole] =
-    useState("");
-
-  const [companyName, setCompanyName] =
-    useState("Company Attendance");
-
-  const [selectedMonth, setSelectedMonth] =
-    useState(() => {
-      return getTodayKey().slice(0, 7);
-    });
-
-  const [employees, setEmployees] =
-    useState<Employee[]>([]);
-
-  const [attendances, setAttendances] =
-    useState<Attendance[]>([]);
-
-  const [holidays, setHolidays] =
-    useState<Holiday[]>([]);
-
-  const [errorMessage, setErrorMessage] =
-    useState("");
-
-  /* =======================================================
-     LOAD DATA
-  ======================================================= */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchData = async () => {
-      setLoading(true);
-      setErrorMessage("");
-
-      try {
-        /* ================================================
-           AUTH
-        ================================================ */
-
-        const {
-          data: { user },
-        } =
-          await supabase.auth.getUser();
-
-        if (!user) {
-          router.push("/login");
-          return;
-        }
-
-        /* ================================================
-           PROFILE
-        ================================================ */
-
-        const {
-          data: profile,
-          error: profileError,
-        } =
-          await supabase
-            .from("profiles")
-            .select(
-              `
-              id,
-              role,
-              company_id,
-              companies(name)
-            `
-            )
-            .eq("id", user.id)
-            .single();
-
-        if (
-          profileError ||
-          !profile
-        ) {
-          setErrorMessage(
-            "Profile tidak ditemukan."
-          );
-          setLoading(false);
-          return;
-        }
-
-        /* ================================================
-           SIMPAN ROLE USER
-        ================================================ */
-
-        setUserRole(profile.role);
-
-        /* ================================================
-           EMPLOYEE TIDAK BOLEH MELIHAT REKAP
-        ================================================ */
-
-        if (
-          profile.role === "employee"
-        ) {
-          router.push("/dashboard");
-          return;
-        }
-
-        /* ================================================
-           COMPANY
-        ================================================ */
-
-        if (profile.companies) {
-          const company =
-            profile.companies as any;
-
-          setCompanyName(
-            company?.name ||
-              "Company Attendance"
-          );
-        }
-
-        /* ================================================
-           SELECTED MONTH
-        ================================================ */
-
-        const [
-          yearString,
-          monthString,
-        ] = selectedMonth.split("-");
-
-        const year =
-          Number(yearString);
-
-        const month =
-          Number(monthString);
-
-        const {
-          start: startDate,
-          end: endDate,
-        } = getMonthUtcRange(
-          year,
-          month
-        );
-
-        /* ================================================
-           EMPLOYEES
-        ================================================ */
-
-        const {
-          data: employeeData,
-          error: employeeError,
-        } =
-          await supabase
-            .from("profiles")
-            .select(
-              `
-              id,
-              full_name,
-              created_at,
-              division
-            `
-            )
-            .eq(
-              "company_id",
-              profile.company_id
-            )
-            .neq("role", "owner")
-            .order("created_at", {
-              ascending: true,
-            });
-
-        if (employeeError) {
-          setErrorMessage(
-            employeeError.message
-          );
-          setLoading(false);
-          return;
-        }
-
-        const employeeList =
-          employeeData || [];
-
-        if (cancelled) return;
-
-        setEmployees(employeeList);
-
-        /* ================================================
-           ATTENDANCE
-        ================================================ */
-
-        if (
-          employeeList.length > 0
-        ) {
-          const employeeIds =
-            employeeList.map(
-              (employee) =>
-                employee.id
-            );
-
-          const {
-            data: attendanceData,
-            error: attendanceError,
-          } =
-            await supabase
-              .from("attendance")
-              .select(
-                `
-                id,
-                profile_id,
-                status,
-                created_at,
-                check_in,
-                check_out,
-                reason,
-                approval_status,
-                rejection_reason
-              `
-              )
-              .in(
-                "profile_id",
-                employeeIds
-              )
-              .gte(
-                "created_at",
-                startDate.toISOString()
-              )
-              .lt(
-                "created_at",
-                endDate.toISOString()
-              )
-              .order("created_at", {
-                ascending: false,
-              });
-
-          if (attendanceError) {
-            setErrorMessage(
-              attendanceError.message
-            );
-            setLoading(false);
-            return;
-          }
-
-          if (cancelled) return;
-
-          setAttendances(
-            attendanceData || []
-          );
-        } else {
-          setAttendances([]);
-        }
-
-        /* ================================================
-           HOLIDAYS
-        ================================================ */
-
-        const formattedStart =
-          `${year}-${String(month).padStart(
-            2,
-            "0"
-          )}-01`;
-
-        const nextYear =
-          month === 12
-            ? year + 1
-            : year;
-
-        const nextMonth =
-          month === 12
-            ? 1
-            : month + 1;
-
-        const formattedEnd =
-          `${nextYear}-${String(
-            nextMonth
-          ).padStart(
-            2,
-            "0"
-          )}-01`;
-
-        const {
-          data: holidayData,
-          error: holidayError,
-        } =
-          await supabase
-            .from("holidays")
-            .select(
-              `
-              id,
-              date,
-              description
-            `
-            )
-            .gte(
-              "date",
-              formattedStart
-            )
-            .lt(
-              "date",
-              formattedEnd
-            )
-            .order("date", {
-              ascending: true,
-            });
-
-        if (holidayError) {
-          console.warn(
-            "Gagal mengambil hari libur:",
-            holidayError.message
-          );
-
-          setHolidays([]);
-        } else {
-          setHolidays(
-            holidayData || []
-          );
-        }
-      } catch (error) {
-        console.error(error);
-
-        setErrorMessage(
-          "Terjadi kesalahan saat mengambil data."
-        );
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchData();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedMonth, router]);
-
-  /* =======================================================
-     MONTH INFORMATION
-  ======================================================= */
-
-  const monthInfo = useMemo(() => {
-    const [
-      yearString,
-      monthString,
-    ] = selectedMonth.split("-");
-
-    const year =
-      Number(yearString);
-
-    const month =
-      Number(monthString);
-
-    const todayKey =
-      getTodayKey();
-
-    const todayYear =
-      Number(
-        todayKey.slice(0, 4)
-      );
-
-    const todayMonth =
-      Number(
-        todayKey.slice(5, 7)
-      );
-
-    const selectedStartKey =
-      `${year}-${String(month).padStart(
-        2,
-        "0"
-      )}-01`;
-
-    const selectedStart =
-      createLocalDate(
-        year,
-        month,
-        1
-      );
-
-    const nextMonthStart =
-      createLocalDate(
-        year,
-        month + 1,
-        1
-      );
-
-    const isFuture =
-      selectedStartKey >
-      todayKey;
-
-    const isCurrentMonth =
-      year === todayYear &&
-      month === todayMonth;
-
-    const daysInMonth =
-      new Date(
-        year,
-        month,
-        0
-      ).getDate();
-
-    return {
-      year,
-      month,
-      monthName:
-        MONTHS[month - 1],
-      isFuture,
-      isCurrentMonth,
-      daysInMonth,
-      selectedStart,
-      nextMonthStart,
-    };
-  }, [selectedMonth]);
-
-  /* =======================================================
-     HOLIDAY SET
-  ======================================================= */
-
-  const holidayDateSet =
-    useMemo(() => {
-      return new Set(
-        holidays.map(
-          (holiday) =>
-            String(
-              holiday.date
-            ).slice(0, 10)
-        )
-      );
-    }, [holidays]);
-
-  /* =======================================================
-     MONTH DATES
-  ======================================================= */
-
-  const allMonthDates =
-    useMemo(() => {
-      return getDatesInMonth(
-        monthInfo.year,
-        monthInfo.month
-      );
-    }, [
-      monthInfo.year,
-      monthInfo.month,
-    ]);
-
-  /* =======================================================
-     ELAPSED DATES
-  ======================================================= */
-
-  const elapsedMonthDates =
-    useMemo(() => {
-      if (monthInfo.isFuture) {
-        return [];
-      }
-
-      const todayKey =
-        getTodayKey();
-
-      return allMonthDates.filter(
-        (item) => {
-          if (
-            monthInfo.isCurrentMonth
-          ) {
-            return (
-              item.key <=
-              todayKey
-            );
-          }
-
-          return true;
-        }
-      );
-    }, [
-      allMonthDates,
-      monthInfo.isFuture,
-      monthInfo.isCurrentMonth,
-    ]);
-
-  /* =======================================================
-     WORKING DAYS
-  ======================================================= */
-
-  const workingDays =
-    useMemo(() => {
-      return elapsedMonthDates.filter(
-        (item) => {
-          if (
-            isWeekendKey(
-              item.key
-            )
-          ) {
-            return false;
-          }
-
-          if (
-            holidayDateSet.has(
-              item.key
-            )
-          ) {
-            return false;
-          }
-
-          return true;
-        }
-      );
-    }, [
-      elapsedMonthDates,
-      holidayDateSet,
-    ]);
-
-  const workingDaySet =
-    useMemo(() => {
-      return new Set(
-        workingDays.map(
-          (day) => day.key
-        )
-      );
-    }, [workingDays]);
-
-  /* =======================================================
-     REPORT DATA
-  ======================================================= */
-
-  const reportData =
-    useMemo(() => {
-      const {
-        year,
-        month,
-        isFuture,
-      } = monthInfo;
-
-      const monthStart =
-        createLocalDate(
-          year,
-          month,
-          1
-        );
-
-      const nextMonth =
-        createLocalDate(
-          year,
-          month + 1,
-          1
-        );
-
-      const result: EmployeeSummary[] =
-        employees.map(
-          (employee) => {
-            const createdDate =
-              new Date(
-                employee.created_at
-              );
-
-            const createdDateKey =
-              getDateKey(
-                employee.created_at
-              );
-
-            /* ==========================================
-               STATUS AKUN
-            ========================================== */
-
-            const accountAfterMonth =
-              createdDate >=
-              nextMonth;
-
-            const accountBeforeMonth =
-              createdDate <
-              monthStart;
-
-            const accountCreatedInMonth =
-              createdDate >=
-                monthStart &&
-              createdDate <
-                nextMonth;
-
-            /* ==========================================
-               ATTENDANCE EMPLOYEE
-            ========================================== */
-
-            const employeeAttendances =
-              attendances.filter(
-                (attendance) =>
-                  attendance.profile_id ===
-                  employee.id
-              );
-
-            /* ==========================================
-               MAP ATTENDANCE PER TANGGAL
-            ========================================== */
-
-            const attendanceByDate =
-              new Map<
-                string,
-                Attendance[]
-              >();
-
-            employeeAttendances.forEach(
-              (attendance) => {
-                const dateKey =
-                  getDateKey(
-                    attendance.check_in ||
-                      attendance.created_at
-                  );
-
-                const current =
-                  attendanceByDate.get(
-                    dateKey
-                  ) || [];
-
-                current.push(
-                  attendance
-                );
-
-                attendanceByDate.set(
-                  dateKey,
-                  current
-                );
-              }
-            );
-
-            /* ==========================================
-               STATUS
-            ========================================== */
-
-            let present = 0;
-            let late = 0;
-            let sick = 0;
-            let leave = 0;
-            let rejected = 0;
-            const rejectionReasons: string[] = [];
-
-            employeeAttendances.forEach(
-              (attendance) => {
-                const dateKey =
-                  getDateKey(
-                    attendance.check_in ||
-                      attendance.created_at
-                  );
-
-                if (
-                  !workingDaySet.has(
-                    dateKey
-                  )
-                ) {
-                  return;
-                }
-
-                if (
-                  dateKey <
-                  createdDateKey
-                ) {
-                  return;
-                }
-
-                // Absensi yang ditolak Admin tidak dihitung
-                // sebagai Hadir, Terlambat, Izin, maupun Sakit.
-                if (
-                  attendance.approval_status ===
-                  "rejected"
-                ) {
-                  rejected++;
-
-                  const reason =
-                    attendance.rejection_reason?.trim();
-
-                  if (reason) {
-                    rejectionReasons.push(
-                      reason
-                    );
-                  }
-
-                  return;
-                }
-
-                if (
-                  attendance.status ===
-                  "present"
-                ) {
-                  present++;
-                }
-
-                if (
-                  attendance.status ===
-                  "late"
-                ) {
-                  late++;
-                }
-
-                if (
-                  attendance.status ===
-                  "sakit"
-                ) {
-                  sick++;
-                }
-
-                if (
-                  attendance.status ===
-                  "izin"
-                ) {
-                  leave++;
-                }
-              }
-            );
-
-            /* ==========================================
-               ACTIVE DAYS
-            ========================================== */
-
-            let activeDays = 0;
-
-            if (
-              !accountAfterMonth &&
-              !isFuture
-            ) {
-              activeDays =
-                workingDays.filter(
-                  (day) =>
-                    day.key >=
-                    createdDateKey
-                ).length;
-            }
-
-            /* ==========================================
-               HOLIDAY DAYS
-            ========================================== */
-
-            let holidayDays = 0;
-
-            if (
-              !accountAfterMonth &&
-              !isFuture
-            ) {
-              holidayDays =
-                holidays.filter(
-                  (holiday) => {
-                    const holidayKey =
-                      String(
-                        holiday.date
-                      ).slice(
-                        0,
-                        10
-                      );
-
-                    return (
-                      holidayKey >=
-                        createdDateKey &&
-                      !isWeekendKey(
-                        holidayKey
-                      )
-                    );
-                  }
-                ).length;
-            }
-
-            /* ==========================================
-               TOTAL ATTENDANCE
-            ========================================== */
-
-            // Terlambat tetap dihitung sebagai hadir.
-            // Karena itu Total Masuk = Hadir + Terlambat.
-            const totalAttendances =
-              present + late;
-
-            /* ==========================================
-               ABSENT / ALPA
-            ========================================== */
-
-            let absent = 0;
-
-            /**
-             * BULAN MASA DEPAN
-             *
-             * Tidak ada Alpa sama sekali.
-             */
-            if (!isFuture) {
-              workingDays.forEach(
-                (day) => {
-                  if (
-                    day.key <
-                    createdDateKey
-                  ) {
-                    return;
-                  }
-
-                  const records =
-                    attendanceByDate.get(
-                      day.key
-                    ) || [];
-
-                  // Record yang ditolak Admin dianggap tidak valid
-                  // untuk perhitungan kehadiran harian.
-                  const validRecords =
-                    records.filter(
-                      (record) =>
-                        record.approval_status !==
-                        "rejected"
-                    );
-
-                  /**
-                   * Tidak ada record valid
-                   * = ALPA
-                   */
-                  if (
-                    validRecords.length ===
-                    0
-                  ) {
-                    absent++;
-                    return;
-                  }
-
-                  /**
-                   * SAKIT
-                   */
-                  const hasSick =
-                    validRecords.some(
-                      (record) =>
-                        record.status ===
-                        "sakit"
-                    );
-
-                  if (hasSick) {
-                    return;
-                  }
-
-                  /**
-                   * IZIN
-                   */
-                  const hasLeave =
-                    validRecords.some(
-                      (record) =>
-                        record.status ===
-                        "izin"
-                    );
-
-                  if (hasLeave) {
-                    return;
-                  }
-
-                  /**
-                   * HADIR / TELAT
-                   */
-                  const hasPresent =
-                    validRecords.some(
-                      (record) =>
-                        record.status ===
-                          "present" ||
-                        record.status ===
-                          "late"
-                    );
-
-                  if (hasPresent) {
-                    return;
-                  }
-
-                  /**
-                   * EXPLICIT ABSENT
-                   */
-                  const hasExplicitAbsent =
-                    validRecords.some(
-                      (record) =>
-                        record.status ===
-                        "absent"
-                    );
-
-                  if (
-                    hasExplicitAbsent
-                  ) {
-                    absent++;
-                    return;
-                  }
-
-                  /**
-                   * FALLBACK
-                   */
-                  absent++;
-                }
-              );
-            }
-
-            return {
-              id: employee.id,
-
-              name:
-                employee.full_name ||
-                "Tanpa Nama",
-
-              division:
-                employee.division,
-
-              createdAt:
-                employee.created_at,
-
-              present,
-              late,
-              sick,
-              leave,
-              absent,
-              rejected,
-              rejectionReasons: [
-                ...new Set(
-                  rejectionReasons
-                ),
-              ],
-
-              totalAttendances,
-
-              activeDays,
-              holidayDays,
-
-              accountBeforeMonth,
-              accountCreatedInMonth,
-              accountAfterMonth,
-
-              monthNotStarted:
-                isFuture,
-
-              hasAttendance:
-                employeeAttendances.length >
-                0,
-            };
-          }
-        );
-
-      /* ================================================
-         SORTING
-      ================================================ */
-
-      return result.sort(
-        (a, b) => {
-          /**
-           * Jika bulan belum dimulai,
-           * semua status sama-sama belum
-           * bisa dihitung.
-           */
-          if (
-            a.monthNotStarted &&
-            b.monthNotStarted
-          ) {
-            return a.name.localeCompare(
-              b.name,
-              "id"
-            );
-          }
-
-          /**
-           * USER BELUM ADA
-           * diletakkan setelah user yang
-           * memang sudah aktif pada bulan.
-           */
-          if (
-            a.accountAfterMonth !==
-            b.accountAfterMonth
-          ) {
-            return a.accountAfterMonth
-              ? 1
-              : -1;
-          }
-
-          /**
-           * 1. ALPA TERBANYAK
-           */
-          if (
-            b.absent !==
-            a.absent
-          ) {
-            return (
-              b.absent -
-              a.absent
-            );
-          }
-
-          /**
-           * 2. TOTAL MASUK TERKECIL
-           */
-          if (
-            b.totalAttendances !==
-            a.totalAttendances
-          ) {
-            return (
-              a.totalAttendances -
-              b.totalAttendances
-            );
-          }
-
-          /**
-           * 3. NAMA A-Z
-           */
-          return a.name.localeCompare(
-            b.name,
-            "id"
-          );
-        }
-      );
-    }, [
-      employees,
-      attendances,
-      holidays,
-      workingDays,
-      workingDaySet,
-      monthInfo,
-    ]);
-
-  /* =======================================================
-     COMPANY STATS
-  ======================================================= */
-
-  const companyStats =
-    useMemo(() => {
-      const activeEmployees =
-        reportData.filter(
-          (employee) =>
-            !employee.accountAfterMonth
-        );
-
-      const totalWorkingDays =
-        workingDays.length;
-
-      const totalHolidays =
-        holidays.filter(
-          (holiday) => {
-            const key =
-              String(
-                holiday.date
-              ).slice(0, 10);
-
-            return (
-              elapsedMonthDates.some(
-                (day) =>
-                  day.key === key
-              ) &&
-              !isWeekendKey(key)
-            );
-          }
-        ).length;
-
-      return {
-        employees:
-          activeEmployees.length,
-
-        attendance:
-          activeEmployees.reduce(
-            (total, employee) =>
-              total +
-              employee.totalAttendances,
-            0
-          ),
-
-        late:
-          activeEmployees.reduce(
-            (total, employee) =>
-              total +
-              employee.late,
-            0
-          ),
-
-        absent:
-          activeEmployees.reduce(
-            (total, employee) =>
-              total +
-              employee.absent,
-            0
-          ),
-
-        rejected:
-          activeEmployees.reduce(
-            (total, employee) =>
-              total +
-              employee.rejected,
-            0
-          ),
-
-        sick:
-          activeEmployees.reduce(
-            (total, employee) =>
-              total +
-              employee.sick,
-            0
-          ),
-
-        leave:
-          activeEmployees.reduce(
-            (total, employee) =>
-              total +
-              employee.leave,
-            0
-          ),
-
-        workingDays:
-          totalWorkingDays,
-
-        holidays:
-          totalHolidays,
-
-        weekends:
-          elapsedMonthDates.filter(
-            (day) =>
-              isWeekendKey(
-                day.key
-              )
-          ).length,
-      };
-    }, [
-      reportData,
-      workingDays,
-      holidays,
-      elapsedMonthDates,
-    ]);
-
-  /* =======================================================
-     PRINT
-  ======================================================= */
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const formattedMonth =
-    `${monthInfo.monthName} ${monthInfo.year}`;
-
-  /* =======================================================
-     LOADING
-  ======================================================= */
-
-  if (
-    loading &&
-    employees.length === 0
-  ) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-        <div className="w-full max-w-sm text-center">
-          <div className="mx-auto mb-5 h-14 w-14 animate-spin rounded-full border-4 border-white/10 border-t-blue-500 sm:h-16 sm:w-16" />
-
-          <h2 className="text-lg font-black text-white sm:text-xl">
-            Menyiapkan Rekap
-          </h2>
-
-          <p className="mt-2 text-xs leading-5 text-slate-400 sm:text-sm">
-            Sedang mengambil data
-            kehadiran...
-          </p>
-        </div>
-      </main>
-    );
+// Supabase membatasi 1000 baris per query, jadi ambil bertahap
+async function fetchAllAttendance(
+  ids: string[],
+  startIso: string,
+  endIso: string
+): Promise<Attendance[]> {
+  const pageSize = 1000;
+  const all: Attendance[] = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from("attendance")
+      .select(
+        "id, profile_id, status, created_at, check_in, approval_status, rejection_reason"
+      )
+      .in("profile_id", ids)
+      .gte("created_at", startIso)
+      .lt("created_at", endIso)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw new Error(error.message);
+
+    all.push(...((data ?? []) as Attendance[]));
+
+    if (!data || data.length < pageSize) break;
   }
 
-  /* =======================================================
-     ERROR
-  ======================================================= */
+  return all;
+}
 
-  if (errorMessage) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-        <div className="w-full max-w-md rounded-[1.75rem] border border-red-500/20 bg-red-500/10 p-6 text-center sm:rounded-[2rem] sm:p-8">
-          <div className="mb-4 text-4xl sm:text-5xl">
-            ⚠️
-          </div>
+const divisionLabel = (division: string | null) =>
+  division?.trim() || "Belum ada divisi";
 
-          <h2 className="text-lg font-black text-white sm:text-xl">
-            Terjadi Kesalahan
-          </h2>
+// =========================================================
+// KOMPONEN KECIL
+// =========================================================
 
-          <p className="mt-3 text-xs leading-6 text-red-200 sm:text-sm">
-            {errorMessage}
-          </p>
-
-          <Link
-            href={getDashboardPath(userRole)}
-            className="mt-6 inline-flex min-h-11 items-center justify-center rounded-xl bg-white px-5 py-3 text-sm font-black text-slate-900 transition hover:bg-slate-100"
-          >
-            Kembali
-          </Link>
-        </div>
-      </main>
-    );
-  }
-
-  /* =======================================================
-     UI
-  ======================================================= */
-
+function Icon({
+  d,
+  className = "h-4 w-4",
+}: {
+  d: string;
+  className?: string;
+}) {
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f5f7fb] text-slate-900 print:bg-white">
-      {/* ==================================================
-          BACKGROUND
-      ================================================== */}
-
-      <div className="pointer-events-none fixed inset-0 overflow-hidden print:hidden">
-        <div className="absolute -left-32 -top-32 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl sm:h-96 sm:w-96" />
-
-        <div className="absolute -right-32 top-40 h-72 w-72 rounded-full bg-indigo-500/10 blur-3xl sm:h-96 sm:w-96" />
-      </div>
-
-      {/* ==================================================
-          HEADER
-      ================================================== */}
-
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl print:hidden">
-        <div className="mx-auto flex min-h-[64px] max-w-[1500px] items-center justify-between gap-3 px-3 py-3 sm:min-h-[72px] sm:px-5 lg:px-8">
-          <div className="flex min-w-0 items-center gap-2.5 sm:gap-4">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-950 p-1.5 shadow-lg sm:h-11 sm:w-11 sm:rounded-2xl">
-              <img
-                src="/svara.png"
-                alt="SVARA"
-                className="h-full w-full object-contain"
-              />
-            </div>
-
-            <div className="min-w-0">
-              <h1 className="max-w-[180px] truncate text-xs font-black text-slate-900 sm:max-w-none sm:text-xl">
-                {companyName}
-              </h1>
-
-              <p className="truncate text-[8px] font-bold uppercase tracking-[0.15em] text-blue-500 sm:text-xs sm:tracking-[0.2em]">
-                Attendance Analytics
-              </p>
-            </div>
-          </div>
-
-          <Link
-            href={getDashboardPath(userRole)}
-            className="flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-600 shadow-sm transition hover:border-blue-200 hover:text-blue-600 sm:min-h-11 sm:gap-2 sm:rounded-2xl sm:px-5 sm:text-sm"
-          >
-            <span className="text-base">
-              ←
-            </span>
-
-            <span className="hidden sm:inline">
-              Dashboard
-            </span>
-
-            <span className="sm:hidden">
-              Kembali
-            </span>
-          </Link>
-        </div>
-      </header>
-
-      <div className="relative mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-5 sm:py-6 lg:px-8 lg:py-10">
-        {/* ==================================================
-            HERO
-        ================================================== */}
-
-        <section className="mb-5 overflow-hidden rounded-[1.5rem] bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950 p-5 text-white shadow-2xl shadow-blue-200/40 sm:mb-7 sm:rounded-[2rem] sm:p-8 lg:p-10 print:hidden">
-          <div className="relative">
-            <div className="absolute -right-16 -top-24 h-60 w-60 rounded-full bg-blue-400/10 blur-3xl" />
-
-            <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between lg:gap-8">
-              <div className="min-w-0">
-                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[8px] font-black uppercase tracking-[0.18em] text-blue-200 sm:mb-4 sm:text-[10px]">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400 sm:h-2 sm:w-2" />
-
-                  Monthly Report
-                </div>
-
-                <h2 className="text-[2rem] font-black leading-[1.05] tracking-tight sm:text-4xl lg:text-5xl">
-                  Rekap Kehadiran
-
-                  <span className="mt-1 block text-blue-300">
-                    {formattedMonth}
-                  </span>
-                </h2>
-
-                <p className="mt-3 max-w-2xl text-xs leading-5 text-slate-300 sm:text-sm sm:leading-6 lg:text-base">
-                  Rekap kehadiran berdasarkan
-                  hari kerja, hari libur,
-                  Sabtu-Minggu, hadir, telat,
-                  sakit, izin, dan Alpa.
-                </p>
-              </div>
-
-              <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto lg:flex-col xl:flex-row">
-                <div className="w-full">
-                  <label className="mb-2 block text-[9px] font-black uppercase tracking-widest text-slate-400 sm:text-[10px]">
-                    Pilih Bulan
-                  </label>
-
-                  <input
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(event) =>
-                      setSelectedMonth(
-                        event.target.value
-                      )
-                    }
-                    className="h-11 w-full rounded-xl border border-white/10 bg-white/10 px-3 text-sm font-black text-white outline-none backdrop-blur transition focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 sm:h-12 sm:w-52 sm:px-4"
-                  />
-                </div>
-
-                <button
-                  onClick={handlePrint}
-                  className="h-11 rounded-xl bg-white px-5 text-sm font-black text-slate-900 shadow-xl transition hover:-translate-y-0.5 hover:bg-blue-50 active:scale-95 sm:h-12"
-                >
-                  🖨️ Cetak
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ==================================================
-            FUTURE MONTH NOTICE
-        ================================================== */}
-
-        {monthInfo.isFuture && (
-          <div className="mb-5 flex items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-indigo-900 sm:mb-7 sm:gap-4 sm:rounded-3xl sm:p-5">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-lg shadow-sm sm:h-11 sm:w-11 sm:rounded-2xl sm:text-xl">
-              🗓️
-            </div>
-
-            <div className="min-w-0">
-              <h3 className="text-sm font-black sm:text-base">
-                Bulan Belum Dimulai
-              </h3>
-
-              <p className="mt-1 text-xs font-medium leading-5 text-indigo-700 sm:text-sm sm:leading-6">
-                Halaman laporan{" "}
-                <strong>
-                  {formattedMonth}
-                </strong>{" "}
-                belum masuk bulan. Data
-                kehadiran dan Alpa belum
-                dihitung.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ==================================================
-            WORKING DAY SUMMARY
-        ================================================== */}
-
-        <section className="mb-5 rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50 via-white to-indigo-50 p-4 shadow-sm sm:mb-7 sm:rounded-3xl sm:p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-lg shadow-lg shadow-blue-200 sm:h-12 sm:w-12 sm:rounded-2xl sm:text-xl">
-                📅
-              </div>
-
-              <div className="min-w-0">
-                <p className="text-[9px] font-black uppercase tracking-widest text-blue-500 sm:text-[10px]">
-                  Hari Kerja
-                </p>
-
-                <div className="mt-0.5 flex items-end gap-2">
-                  <span className="text-3xl font-black text-slate-900 sm:text-4xl">
-                    {
-                      companyStats.workingDays
-                    }
-                  </span>
-
-                  <span className="pb-1 text-xs font-bold text-slate-400 sm:text-sm">
-                    hari
-                  </span>
-                </div>
-
-                <p className="mt-1 max-w-xl text-[10px] font-medium leading-4 text-slate-500 sm:text-xs sm:leading-5">
-                  Senin–Jumat, tidak termasuk
-                  hari libur perusahaan dan
-                  tanggal yang belum terjadi.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 sm:w-auto sm:min-w-[230px]">
-              <div className="rounded-xl bg-white px-3 py-3 shadow-sm sm:rounded-2xl sm:px-4">
-                <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 sm:text-[9px]">
-                  Weekend
-                </p>
-
-                <p className="mt-1 text-xl font-black text-slate-700 sm:text-2xl">
-                  {
-                    companyStats.weekends
-                  }
-                </p>
-
-                <p className="text-[8px] font-bold text-slate-400 sm:text-[9px]">
-                  hari
-                </p>
-              </div>
-
-              <div className="rounded-xl bg-white px-3 py-3 shadow-sm sm:rounded-2xl sm:px-4">
-                <p className="text-[8px] font-black uppercase tracking-wider text-purple-400 sm:text-[9px]">
-                  Libur Bos
-                </p>
-
-                <p className="mt-1 text-xl font-black text-purple-600 sm:text-2xl">
-                  {
-                    companyStats.holidays
-                  }
-                </p>
-
-                <p className="text-[8px] font-bold text-slate-400 sm:text-[9px]">
-                  hari
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ==================================================
-            STATS
-        ================================================== */}
-
-        <section className="mb-5 grid grid-cols-2 gap-2.5 sm:mb-7 sm:grid-cols-3 sm:gap-3 lg:grid-cols-7">
-          <StatCard
-            icon="👥"
-            label="Karyawan"
-            value={
-              companyStats.employees
-            }
-            badge="Aktif"
-            valueClass="text-slate-900"
-            badgeClass="bg-slate-100 text-slate-500"
-          />
-
-          <StatCard
-            icon="📅"
-            label="Hari Kerja"
-            value={
-              companyStats.workingDays
-            }
-            badge="Kerja"
-            valueClass="text-indigo-600"
-            badgeClass="bg-indigo-50 text-indigo-600"
-          />
-
-          <StatCard
-            icon="📊"
-            label="Total Masuk"
-            value={
-              companyStats.attendance
-            }
-            badge="Hadir"
-            valueClass="text-blue-600"
-            badgeClass="bg-blue-50 text-blue-600"
-          />
-
-          <StatCard
-            icon="⏰"
-            label="Terlambat"
-            value={
-              companyStats.late
-            }
-            badge="Late"
-            valueClass="text-yellow-600"
-            badgeClass="bg-yellow-50 text-yellow-600"
-          />
-
-          <StatCard
-            icon="⛔"
-            label="Ditolak"
-            value={
-              companyStats.rejected
-            }
-            badge="Admin"
-            valueClass="text-rose-600"
-            badgeClass="bg-rose-50 text-rose-600"
-          />
-
-          <StatCard
-            icon="🏖️"
-            label="Hari Libur"
-            value={
-              companyStats.holidays
-            }
-            badge="Libur Bos"
-            valueClass="text-purple-600"
-            badgeClass="bg-purple-50 text-purple-600"
-          />
-        </section>
-
-        {/* ==================================================
-            ALPA INFORMATION
-        ================================================== */}
-
-        <section className="mb-5 rounded-2xl border border-red-100 bg-gradient-to-r from-red-50 to-orange-50 p-4 sm:mb-7 sm:rounded-3xl sm:p-5">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-lg shadow-sm sm:rounded-2xl">
-              🚨
-            </div>
-
-            <div className="min-w-0">
-              <h3 className="text-sm font-black text-red-700 sm:text-base">
-                Perhitungan Alpa
-              </h3>
-
-              <p className="mt-1 text-[11px] font-medium leading-5 text-red-600 sm:text-sm sm:leading-6">
-                Alpa dihitung hanya pada
-                hari kerja yang sudah
-                terjadi. Sabtu, Minggu,
-                hari libur perusahaan,
-                tanggal sebelum akun dibuat,
-                dan bulan yang belum dimulai
-                tidak dihitung sebagai Alpa.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ==================================================
-            TABLE / EMPLOYEE CARD
-        ================================================== */}
-
-        <section className="overflow-hidden rounded-[1.5rem] border border-slate-200 bg-white shadow-xl shadow-slate-200/50 sm:rounded-[2rem]">
-          {/* HEADER */}
-
-          <div className="border-b border-slate-100 px-4 py-4 sm:px-7 sm:py-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <h3 className="text-lg font-black text-slate-900 sm:text-xl">
-                  Daftar Karyawan
-                </h3>
-
-                <p className="mt-1 text-[10px] font-medium leading-4 text-slate-400 sm:text-sm sm:leading-5">
-                  Urutan: Alpa terbanyak →
-                  Total Masuk paling sedikit
-                  → Nama A-Z.
-                </p>
-              </div>
-
-              <div className="w-fit rounded-xl bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-500 sm:px-4 sm:text-xs">
-                {formattedMonth}
-              </div>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="flex min-h-[300px] flex-col items-center justify-center px-6">
-              <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-100 border-t-blue-600" />
-
-              <p className="mt-4 text-sm font-bold text-slate-400">
-                Menghitung rekap...
-              </p>
-            </div>
-          ) : reportData.length === 0 ? (
-            <div className="flex min-h-[350px] flex-col items-center justify-center px-6 text-center sm:min-h-[400px]">
-              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-slate-50 text-4xl sm:h-24 sm:w-24 sm:text-5xl">
-                👥
-              </div>
-
-              <h3 className="text-lg font-black text-slate-800 sm:text-xl">
-                Belum Ada Karyawan
-              </h3>
-
-              <p className="mt-2 max-w-md text-xs font-medium leading-5 text-slate-400 sm:text-sm sm:leading-6">
-                Belum terdapat karyawan di
-                perusahaan ini.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* =================================================
-                  MOBILE + TABLET / IPAD
-                  < 1024px
-              ================================================= */}
-
-              <div className="space-y-3 p-3 sm:p-4 lg:hidden">
-                {reportData.map(
-                  (
-                    employee,
-                    index
-                  ) => (
-                    <Link
-                      href={`/rekap/${employee.id}`}
-                      key={employee.id}
-                      className="block rounded-2xl border border-slate-200 bg-slate-50/60 p-4 transition active:scale-[0.99] hover:border-blue-200 hover:bg-blue-50/40 sm:rounded-3xl sm:p-5"
-                    >
-                      {/* USER HEADER */}
-
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-black text-white shadow-lg shadow-blue-200 sm:h-12 sm:w-12 sm:rounded-2xl">
-                          {employee.name
-                            .charAt(0)
-                            .toUpperCase()}
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="shrink-0 text-[8px] font-black text-slate-300 sm:text-[9px]">
-                                  #
-                                  {String(
-                                    index +
-                                      1
-                                  ).padStart(
-                                    2
-                                  )}
-                                </span>
-
-                                <h4 className="truncate text-sm font-black text-slate-900 sm:text-base">
-                                  {
-                                    employee.name
-                                  }
-                                </h4>
-                              </div>
-
-                              <div className="mt-2">
-                                <DivisionBadge
-                                  division={
-                                    employee.division
-                                  }
-                                />
-                              </div>
-
-                              <p className="mt-1 text-[9px] font-bold text-slate-400 sm:text-[10px]">
-                                Dibuat{" "}
-                                {formatCreatedDate(
-                                  employee.createdAt
-                                )}
-                              </p>
-                            </div>
-
-                            <span className="shrink-0 text-lg text-slate-300 sm:text-xl">
-                              →
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* =================================================
-                          FUTURE MONTH
-                      ================================================= */}
-
-                      {employee.monthNotStarted ? (
-                        <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white">
-                              🗓️
-                            </div>
-
-                            <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-indigo-400">
-                                Status
-                              </p>
-
-                              <p className="mt-1 text-sm font-black text-indigo-700">
-                                BULAN BELUM
-                                DIMULAI
-                              </p>
-
-                              <p className="mt-1 text-[10px] font-medium leading-5 text-indigo-600 sm:text-xs">
-                                Halaman laporan
-                                belum masuk
-                                bulan{" "}
-                                {
-                                  monthInfo.monthName
-                                }.
-                                <br />
-                                Belum ada
-                                perhitungan
-                                kehadiran.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ) : employee.accountAfterMonth ? (
-                        /* =================================================
-                           USER BELUM ADA
-                        ================================================= */
-
-                        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                          <div className="flex items-start gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
-                              👤
-                            </div>
-
-                            <div>
-                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
-                                Status
-                              </p>
-
-                              <p className="mt-1 text-sm font-black text-slate-600">
-                                USER BELUM ADA
-                              </p>
-
-                              <p className="mt-1 text-[10px] font-medium leading-5 text-slate-400 sm:text-xs">
-                                Akun baru dibuat
-                                pada{" "}
-                                {formatCreatedDate(
-                                  employee.createdAt
-                                )}
-                                .
-                                <br />
-                                Pada{" "}
-                                {
-                                  monthInfo.monthName
-                                }{" "}
-                                akun ini belum
-                                dibuat.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          {/* =================================================
-                              NEW EMPLOYEE
-                          ================================================= */}
-
-                          {employee.accountCreatedInMonth && (
-                            <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-3.5 sm:p-4">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-blue-400">
-                                Karyawan Baru
-                              </p>
-
-                              <p className="mt-1 text-[10px] font-bold leading-5 text-blue-700 sm:text-xs">
-                                Akun dibuat{" "}
-                                {formatCreatedDate(
-                                  employee.createdAt
-                                )}
-                                .
-                                <br />
-                                Hari sebelum akun
-                                dibuat tidak
-                                dihitung.
-                              </p>
-                            </div>
-                          )}
-
-                          {/* =================================================
-                              ALPA
-                          ================================================= */}
-
-                          <div className="mt-4 rounded-2xl border border-red-100 bg-red-50 p-4">
-                            <div className="flex items-center justify-between gap-3">
-                              <div>
-                                <p className="text-[8px] font-black uppercase tracking-widest text-red-400 sm:text-[9px]">
-                                  Total Alpa
-                                </p>
-
-                                <p className="mt-1 text-3xl font-black text-red-600 sm:text-4xl">
-                                  {
-                                    employee.absent
-                                  }
-
-                                  <span className="ml-1 text-[10px] sm:text-xs">
-                                    hari
-                                  </span>
-                                </p>
-                              </div>
-
-                              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-lg shadow-sm sm:h-12 sm:w-12 sm:rounded-2xl sm:text-xl">
-                                🚨
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* =================================================
-                              TOTAL MASUK / HARI KERJA
-                          ================================================= */}
-
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <div className="rounded-2xl bg-white p-3 sm:p-4">
-                              <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 sm:text-[9px]">
-                                Total Masuk
-                              </p>
-
-                              <p className="mt-1 text-2xl font-black text-blue-600 sm:text-3xl">
-                                {
-                                  employee.totalAttendances
-                                }
-
-                                <span className="ml-1 text-[9px] sm:text-xs">
-                                  hari
-                                </span>
-                              </p>
-                            </div>
-
-                            <div className="rounded-2xl bg-white p-3 sm:p-4">
-                              <p className="text-[8px] font-black uppercase tracking-wider text-slate-400 sm:text-[9px]">
-                                Hari Kerja
-                              </p>
-
-                              <p className="mt-1 text-2xl font-black text-slate-800 sm:text-3xl">
-                                {
-                                  employee.activeDays
-                                }
-
-                                <span className="ml-1 text-[9px] sm:text-xs">
-                                  hari
-                                </span>
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* =================================================
-                              STATUS GRID
-                          ================================================= */}
-
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            <MiniStat
-                              label="Hadir"
-                              value={
-                                employee.present
-                              }
-                              className="bg-emerald-50 text-emerald-600"
-                            />
-
-                            <MiniStat
-                              label="Telat"
-                              value={
-                                employee.late
-                              }
-                              className="bg-yellow-50 text-yellow-600"
-                            />
-
-                            <MiniStat
-                              label="Sakit"
-                              value={
-                                employee.sick
-                              }
-                              className="bg-orange-50 text-orange-600"
-                            />
-
-                            <MiniStat
-                              label="Izin"
-                              value={
-                                employee.leave
-                              }
-                              className="bg-purple-50 text-purple-600"
-                            />
-
-                            <MiniStat
-                              label="Ditolak"
-                              value={
-                                employee.rejected
-                              }
-                              className="bg-rose-50 text-rose-600"
-                            />
-                          </div>
-
-                          {employee.rejected > 0 && (
-                            <div className="mt-3 rounded-2xl border border-rose-100 bg-rose-50 p-3.5">
-                              <p className="text-[8px] font-black uppercase tracking-widest text-rose-400 sm:text-[9px]">
-                                Alasan Admin
-                              </p>
-
-                              <div className="mt-2 space-y-1.5">
-                                {employee.rejectionReasons
-                                  .slice(0, 3)
-                                  .map((reason, reasonIndex) => (
-                                    <p
-                                      key={`${employee.id}-rejection-${reasonIndex}`}
-                                      className="text-[10px] font-semibold leading-5 text-rose-700 sm:text-xs"
-                                    >
-                                      • {reason}
-                                    </p>
-                                  ))}
-
-                                {employee.rejectionReasons.length === 0 && (
-                                  <p className="text-[10px] font-medium text-rose-500">
-                                    Admin menolak absensi tanpa menuliskan alasan.
-                                  </p>
-                                )}
-
-                                {employee.rejectionReasons.length > 3 && (
-                                  <p className="pt-1 text-[9px] font-bold text-rose-400">
-                                    +{employee.rejectionReasons.length - 3} alasan lainnya
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-
-                      {/* DETAIL */}
-
-                      <div className="mt-3 flex items-center justify-center rounded-xl border border-slate-200 bg-white py-2.5 text-[10px] font-black text-slate-500 sm:text-xs">
-                        Tap untuk melihat
-                        detail →
-                      </div>
-                    </Link>
-                  )
-                )}
-              </div>
-
-              {/* =================================================
-                  DESKTOP
-                  >= 1024px
-              ================================================= */}
-
-              <div className="hidden overflow-x-auto lg:block">
-                <table className="w-full min-w-[1200px] text-left">
-                  <thead className="bg-slate-50/80">
-                    <tr>
-                      <th className="px-5 py-5 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">
-                        #
-                      </th>
-
-                      <th className="px-5 py-5 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">
-                        Karyawan
-                      </th>
-
-                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-emerald-500">
-                        Hadir
-                      </th>
-
-                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-yellow-500">
-                        Telat
-                      </th>
-
-                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-rose-500">
-                        Ditolak
-                      </th>
-
-                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-orange-500">
-                        Sakit
-                      </th>
-
-                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-purple-500">
-                        Izin
-                      </th>
-
-                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-red-500">
-                        Alpa
-                      </th>
-
-                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-indigo-500">
-                        Hari Kerja
-                      </th>
-
-                      <th className="px-3 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-blue-500">
-                        Total Masuk
-                      </th>
-
-                      <th className="px-5 py-5 text-center text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">
-                        Detail
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody className="divide-y divide-slate-100">
-                    {reportData.map(
-                      (
-                        employee,
-                        index
-                      ) => (
-                        <tr
-                          key={
-                            employee.id
-                          }
-                          className="group transition hover:bg-blue-50/30"
-                        >
-                          {/* NUMBER */}
-
-                          <td className="px-5 py-5">
-                            <span className="text-xs font-black text-slate-300">
-                              {String(
-                                index +
-                                  1
-                              ).padStart(
-                                2
-                              )}
-                            </span>
-                          </td>
-
-                          {/* EMPLOYEE */}
-
-                          <td className="px-5 py-5">
-                            <Link
-                              href={`/rekap/${employee.id}`}
-                              className="group/name flex items-center gap-3"
-                            >
-                              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-sm font-black text-white shadow-lg shadow-blue-100 transition group-hover/name:scale-105">
-                                {employee.name
-                                  .charAt(
-                                    0
-                                  )
-                                  .toUpperCase()}
-                              </div>
-
-                              <div className="min-w-0">
-                                <p className="font-black text-slate-900 transition group-hover/name:text-blue-600">
-                                  {
-                                    employee.name
-                                  }
-                                </p>
-
-                                <div className="mt-1">
-                                  <DivisionBadge
-                                    division={
-                                      employee.division
-                                    }
-                                  />
-                                </div>
-
-                                <p className="mt-1 text-[10px] font-semibold text-slate-400">
-                                  Dibuat{" "}
-                                  {formatCreatedDate(
-                                    employee.createdAt
-                                  )}
-                                </p>
-                              </div>
-                            </Link>
-                          </td>
-
-                          {/* HADIR */}
-
-                          <td className="px-3 py-5 text-center">
-                            {employee.monthNotStarted ||
-                            employee.accountAfterMonth ? (
-                              <StatusBadge>
-                                —
-                              </StatusBadge>
-                            ) : (
-                              <NumberBadge
-                                value={
-                                  employee.present
-                                }
-                                className="border-emerald-100 bg-emerald-50 text-emerald-600"
-                              />
-                            )}
-                          </td>
-
-                          {/* TELAT */}
-
-                          <td className="px-3 py-5 text-center">
-                            {employee.monthNotStarted ||
-                            employee.accountAfterMonth ? (
-                              <StatusBadge>
-                                —
-                              </StatusBadge>
-                            ) : (
-                              <NumberBadge
-                                value={
-                                  employee.late
-                                }
-                                className="border-yellow-100 bg-yellow-50 text-yellow-600"
-                              />
-                            )}
-                          </td>
-
-                          {/* DITOLAK */}
-
-                          <td className="px-3 py-5 text-center">
-                            {employee.monthNotStarted ||
-                            employee.accountAfterMonth ? (
-                              <StatusBadge>
-                                —
-                              </StatusBadge>
-                            ) : (
-                              <div className="group/rejected relative inline-flex flex-col items-center">
-                                <NumberBadge
-                                  value={
-                                    employee.rejected
-                                  }
-                                  className="border-rose-100 bg-rose-50 text-rose-600"
-                                />
-
-                                {employee.rejected > 0 && (
-                                  <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-72 -translate-x-1/2 rounded-2xl border border-rose-100 bg-white p-3 text-left shadow-2xl group-hover/rejected:block">
-                                    <p className="text-[9px] font-black uppercase tracking-widest text-rose-400">
-                                      Alasan Admin
-                                    </p>
-
-                                    <div className="mt-2 space-y-1.5">
-                                      {employee.rejectionReasons
-                                        .slice(0, 3)
-                                        .map((reason, reasonIndex) => (
-                                          <p
-                                            key={`${employee.id}-desktop-rejection-${reasonIndex}`}
-                                            className="text-[10px] font-semibold leading-5 text-slate-600"
-                                          >
-                                            • {reason}
-                                          </p>
-                                        ))}
-
-                                      {employee.rejectionReasons.length === 0 && (
-                                        <p className="text-[10px] font-medium text-slate-500">
-                                          Tidak ada alasan yang ditulis Admin.
-                                        </p>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-
-                          {/* SAKIT */}
-
-                          <td className="px-3 py-5 text-center">
-                            {employee.monthNotStarted ||
-                            employee.accountAfterMonth ? (
-                              <StatusBadge>
-                                —
-                              </StatusBadge>
-                            ) : (
-                              <NumberBadge
-                                value={
-                                  employee.sick
-                                }
-                                className="border-orange-100 bg-orange-50 text-orange-600"
-                              />
-                            )}
-                          </td>
-
-                          {/* IZIN */}
-
-                          <td className="px-3 py-5 text-center">
-                            {employee.monthNotStarted ||
-                            employee.accountAfterMonth ? (
-                              <StatusBadge>
-                                —
-                              </StatusBadge>
-                            ) : (
-                              <NumberBadge
-                                value={
-                                  employee.leave
-                                }
-                                className="border-purple-100 bg-purple-50 text-purple-600"
-                              />
-                            )}
-                          </td>
-
-                          {/* ALPA */}
-
-                          <td className="px-3 py-5 text-center">
-                            {employee.monthNotStarted ? (
-                              <StatusBadge>
-                                BULAN BELUM
-                                DIMULAI
-                              </StatusBadge>
-                            ) : employee.accountAfterMonth ? (
-                              <StatusBadge>
-                                USER BELUM ADA
-                              </StatusBadge>
-                            ) : (
-                              <div
-                                className={`inline-flex min-w-[68px] flex-col items-center rounded-2xl border px-3 py-2.5 ${
-                                  employee.absent >
-                                  0
-                                    ? "border-red-100 bg-red-50"
-                                    : "border-emerald-100 bg-emerald-50"
-                                }`}
-                              >
-                                <span
-                                  className={`text-xl font-black ${
-                                    employee.absent >
-                                    0
-                                      ? "text-red-600"
-                                      : "text-emerald-600"
-                                  }`}
-                                >
-                                  {
-                                    employee.absent
-                                  }
-                                </span>
-
-                                <span
-                                  className={`text-[9px] font-black uppercase tracking-wider ${
-                                    employee.absent ===
-                                    0
-                                      ? "text-emerald-400"
-                                      : "text-red-400"
-                                  }`}
-                                >
-                                  {employee.absent ===
-                                  0
-                                    ? "Aman"
-                                    : "hari"}
-                                </span>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* HARI KERJA */}
-
-                          <td className="px-3 py-5 text-center">
-                            {employee.monthNotStarted ? (
-                              <StatusBadge>
-                                BULAN BELUM
-                                DIMULAI
-                              </StatusBadge>
-                            ) : employee.accountAfterMonth ? (
-                              <StatusBadge>
-                                USER BELUM ADA
-                              </StatusBadge>
-                            ) : (
-                              <div className="inline-flex min-w-[65px] flex-col items-center rounded-2xl bg-indigo-50 px-3 py-2.5">
-                                <span className="text-xl font-black text-indigo-600">
-                                  {
-                                    employee.activeDays
-                                  }
-                                </span>
-
-                                <span className="text-[9px] font-black uppercase tracking-wider text-indigo-400">
-                                  hari
-                                </span>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* TOTAL MASUK */}
-
-                          <td className="px-3 py-5 text-center">
-                            {employee.monthNotStarted ? (
-                              <StatusBadge>
-                                BULAN BELUM
-                                DIMULAI
-                              </StatusBadge>
-                            ) : employee.accountAfterMonth ? (
-                              <StatusBadge>
-                                USER BELUM ADA
-                              </StatusBadge>
-                            ) : (
-                              <div className="inline-flex min-w-[65px] flex-col items-center rounded-2xl bg-blue-50 px-3 py-2.5">
-                                <span className="text-xl font-black text-blue-600">
-                                  {
-                                    employee.totalAttendances
-                                  }
-                                </span>
-
-                                <span className="text-[9px] font-black uppercase tracking-wider text-blue-400">
-                                  hari
-                                </span>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* DETAIL */}
-
-                          <td className="px-5 py-5 text-center">
-                            <Link
-                              href={`/rekap/${employee.id}`}
-                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-black text-slate-600 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600"
-                            >
-                              Detail
-                              <span>
-                                →
-                              </span>
-                            </Link>
-                          </td>
-                        </tr>
-                      )
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </section>
-
-        {/* ==================================================
-            LEGEND
-        ================================================== */}
-
-        <div className="mt-4 flex flex-wrap items-center gap-1.5 text-[9px] font-bold text-slate-400 print:hidden sm:mt-5 sm:gap-2">
-          <span className="mr-1 font-black uppercase tracking-widest">
-            Keterangan:
-          </span>
-
-          <span className="rounded-full bg-red-50 px-2.5 py-1.5 text-red-600">
-            Alpa = Tidak masuk
-          </span>
-
-          <span className="rounded-full bg-blue-50 px-2.5 py-1.5 text-blue-600">
-            Total Masuk = Hadir + Telat
-          </span>
-
-          <span className="rounded-full bg-rose-50 px-2.5 py-1.5 text-rose-600">
-            Ditolak = Tidak dihitung sebagai Hadir
-          </span>
-
-          <span className="rounded-full bg-indigo-50 px-2.5 py-1.5 text-indigo-600">
-            Hari Kerja = Senin–Jumat
-          </span>
-
-          <span className="rounded-full bg-purple-50 px-2.5 py-1.5 text-purple-600">
-            Libur Bos = Tidak dihitung
-          </span>
-
-          <span className="rounded-full bg-slate-100 px-2.5 py-1.5">
-            Sabtu & Minggu = Libur
-          </span>
-
-          <span className="rounded-full bg-indigo-50 px-2.5 py-1.5 text-indigo-600">
-            Urutan = Alpa terbanyak
-          </span>
-        </div>
-      </div>
-
-      {/* ==================================================
-          PRINT HEADER
-      ================================================== */}
-
-      <div className="hidden print:block">
-        <div className="mx-auto max-w-6xl px-8 py-8">
-          <div className="flex items-center gap-4 border-b-2 border-black pb-5">
-            <img
-              src="/svara.png"
-              alt="SVARA"
-              className="h-16 w-32 object-contain"
-            />
-
-            <div>
-              <h1 className="text-2xl font-black">
-                {companyName}
-              </h1>
-
-              <p className="text-sm font-bold">
-                Laporan Rekapitulasi
-                Kehadiran
-              </p>
-
-              <p className="text-xs">
-                Periode:{" "}
-                {formattedMonth}
-              </p>
-
-              <p className="mt-1 text-xs">
-                Total Hari Kerja:{" "}
-                {
-                  companyStats.workingDays
-                }
-              </p>
-
-              <p className="text-xs">
-                Total Alpa:{" "}
-                {companyStats.absent}
-              </p>
-
-              <p className="text-xs">
-                Total Ditolak:{" "}
-                {companyStats.rejected}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
   );
 }
 
-/* =========================================================
-   STAT CARD
-========================================================= */
-
-function StatCard({
-  icon,
-  label,
-  value,
-  badge,
-  valueClass,
-  badgeClass,
-}: {
-  icon: string;
-  label: string;
-  value: number;
-  badge: string;
-  valueClass: string;
-  badgeClass: string;
-}) {
+function Avatar({ name }: { name: string }) {
   return (
-    <div className="group min-w-0 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition hover:-translate-y-1 hover:shadow-xl sm:rounded-3xl sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-2 sm:mb-4">
-        <span className="text-xl sm:text-2xl">
-          {icon}
-        </span>
-
-        <span
-          className={`truncate rounded-full px-2 py-1 text-[7px] font-black uppercase tracking-wider sm:px-2.5 sm:py-1.5 sm:text-[9px] ${badgeClass}`}
-        >
-          {badge}
-        </span>
-      </div>
-
-      <p className="truncate text-[8px] font-black uppercase tracking-widest text-slate-400 sm:text-[10px]">
-        {label}
-      </p>
-
-      <p
-        className={`mt-1 text-2xl font-black sm:text-3xl ${valueClass}`}
-      >
-        {value}
-      </p>
+    <div
+      className={`${D} flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-600`}
+    >
+      {name.trim().charAt(0).toUpperCase() || "?"}
     </div>
   );
 }
 
-/* =========================================================
-   DIVISION BADGE
-========================================================= */
+function DivisionTag({ division }: { division: string | null }) {
+  if (!division?.trim()) {
+    return (
+      <span className="text-xs italic text-slate-400">Belum ada divisi</span>
+    );
+  }
 
-function DivisionBadge({
-  division,
-}: {
-  division: string | null;
-}) {
   return (
-    <span className="inline-flex max-w-full items-center rounded-lg bg-indigo-50 px-2 py-1 text-[8px] font-black uppercase tracking-wide text-indigo-600 sm:px-2.5 sm:text-[9px]">
-      <span className="mr-1">
-        🏷️
-      </span>
-
-      <span className="truncate">
-        {division ||
-          "Belum ada divisi"}
-      </span>
+    <span className="inline-flex max-w-full items-center rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-200">
+      <span className="truncate">{division}</span>
     </span>
   );
 }
 
-/* =========================================================
-   NUMBER BADGE
-========================================================= */
+function DayTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
 
-function NumberBadge({
-  value,
-  className,
-}: {
-  value: number;
-  className: string;
-}) {
+  const row = payload[0].payload;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs shadow-lg">
+      <p className="mb-1.5 font-semibold text-slate-800">{row.full}</p>
+
+      {DAY_KEYS.map((key) => (
+        <div
+          key={key}
+          className="flex items-center justify-between gap-6 py-0.5"
+        >
+          <span className="flex items-center gap-2 text-slate-500">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: META[key].color }}
+            />
+            {META[key].label}
+          </span>
+
+          <span className="font-semibold text-slate-800">{row[key]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Num({ value, tone }: { value: number; tone: string }) {
   return (
     <span
-      className={`inline-flex min-w-[42px] items-center justify-center rounded-xl border px-2.5 py-2 text-sm font-black ${className}`}
+      className={`text-sm font-semibold tabular-nums ${
+        value === 0 ? "text-slate-300" : tone
+      }`}
     >
       {value}
     </span>
   );
 }
 
-/* =========================================================
-   STATUS BADGE
-========================================================= */
+function noDataText(employee: EmployeeSummary) {
+  return employee.monthNotStarted
+    ? "Bulan ini belum dimulai."
+    : `Akun baru dibuat ${formatCreatedDate(
+        employee.createdAt
+      )}, jadi belum dihitung bulan ini.`;
+}
 
-function StatusBadge({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function EmployeeCard({ employee: e }: { employee: EmployeeSummary }) {
+  const noData = e.monthNotStarted || e.accountAfterMonth;
+
   return (
-    <span className="inline-flex max-w-[120px] items-center justify-center rounded-xl bg-slate-100 px-2.5 py-2 text-center text-[8px] font-black uppercase leading-4 tracking-wide text-slate-500">
-      {children}
-    </span>
+    <div className={`${card} p-4 sm:p-5`}>
+      <div className="flex items-start gap-3">
+        <Avatar name={e.name} />
+
+        <div className="min-w-0 flex-1">
+          <p className="break-words text-[15px] font-semibold text-slate-900">
+            {e.name}
+          </p>
+
+          <div className="mt-1.5">
+            <DivisionTag division={e.division} />
+          </div>
+        </div>
+      </div>
+
+      {noData ? (
+        <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-500">
+          {noDataText(e)}
+        </p>
+      ) : (
+        <>
+          {e.accountCreatedInMonth && (
+            <p className="mt-3 rounded-xl bg-sky-50 px-3.5 py-2.5 text-xs leading-relaxed text-sky-700">
+              Karyawan baru. Dihitung sejak {formatCreatedDate(e.createdAt)}.
+            </p>
+          )}
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-slate-50 p-3.5">
+              <p className="text-xs text-slate-500">Total masuk</p>
+              <p
+                className={`${D} mt-0.5 text-3xl font-semibold text-slate-900`}
+              >
+                {e.totalAttendances}
+              </p>
+              <p className="text-xs text-slate-400">dari {e.activeDays} hari</p>
+            </div>
+
+            <div className="rounded-xl bg-rose-50 p-3.5">
+              <p className="text-xs text-rose-600">Alpa</p>
+              <p
+                className={`${D} mt-0.5 text-3xl font-semibold text-rose-600`}
+              >
+                {e.absent}
+              </p>
+              <p className="text-xs text-rose-400">hari</p>
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(
+              [
+                ["present", e.present],
+                ["late", e.late],
+                ["sick", e.sick],
+                ["leave", e.leave],
+              ] as [DayKey, number][]
+            ).map(([key, value]) => (
+              <span
+                key={key}
+                className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600"
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ backgroundColor: META[key].color }}
+                />
+                {META[key].label}
+                <span className="font-semibold text-slate-900">{value}</span>
+              </span>
+            ))}
+
+            {e.rejected > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600">
+                <span className="h-2 w-2 rounded-full bg-slate-400" />
+                Ditolak
+                <span className="font-semibold text-slate-900">
+                  {e.rejected}
+                </span>
+              </span>
+            )}
+          </div>
+
+          {e.rejected > 0 && (
+            <details className="mt-3 rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs text-rose-700">
+              <summary className="cursor-pointer font-semibold">
+                Alasan penolakan
+              </summary>
+
+              <ul className="mt-2 list-disc space-y-1 pl-4 leading-relaxed">
+                {e.rejectionReasons.length ? (
+                  e.rejectionReasons.map((reason, i) => (
+                    <li key={i}>{reason}</li>
+                  ))
+                ) : (
+                  <li>Admin menolak absensi tanpa menuliskan alasan.</li>
+                )}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+
+      <Link
+        href={`/rekap/${e.id}`}
+        className="mt-4 flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+      >
+        Lihat detail
+        <Icon d={ICONS.chevR} className="h-3.5 w-3.5" />
+      </Link>
+    </div>
   );
 }
 
-/* =========================================================
-   MINI STAT
-========================================================= */
+// =========================================================
+// HALAMAN
+// =========================================================
 
-function MiniStat({
-  label,
-  value,
-  className,
-}: {
-  label: string;
-  value: number;
-  className: string;
-}) {
+export default function MonthlyReportPage() {
+  const router = useRouter();
+
+  const [loading, setLoading] = useState(true);
+  const [fetching, setFetching] = useState(false);
+
+  const [userName, setUserName] = useState("");
+  const [userRole, setUserRole] = useState("");
+  const [companyName, setCompanyName] = useState("Company Attendance");
+
+  const [selectedMonth, setSelectedMonth] = useState(() =>
+    getTodayKey().slice(0, 7)
+  );
+
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [attendances, setAttendances] = useState<Attendance[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const [sortKey, setSortKey] = useState<SortKey>("absent");
+
+  // =========================================================
+  // LOAD DATA
+  // =========================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      setFetching(true);
+      setErrorMessage("");
+
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, role, company_id, full_name, companies(name)")
+          .eq("id", user.id)
+          .single();
+
+        if (profileError || !profile) {
+          throw new Error("Profile tidak ditemukan.");
+        }
+
+        // Employee tidak boleh melihat rekap
+        if (profile.role === "employee") {
+          router.replace("/dashboard");
+          return;
+        }
+
+        const company: any = (profile as any).companies;
+        const cName = Array.isArray(company) ? company[0]?.name : company?.name;
+
+        const [yearString, monthString] = selectedMonth.split("-");
+        const year = Number(yearString);
+        const month = Number(monthString);
+        const range = getMonthRange(year, month);
+
+        // ---- karyawan (owner tidak dihitung)
+        const { data: employeeData, error: employeeError } = await supabase
+          .from("profiles")
+          .select("id, full_name, created_at, division")
+          .eq("company_id", profile.company_id)
+          .neq("role", "owner")
+          .order("created_at", { ascending: true });
+
+        if (employeeError) throw new Error(employeeError.message);
+
+        const employeeList = (employeeData ?? []) as Employee[];
+
+        // ---- absensi
+        const attendanceList = employeeList.length
+          ? await fetchAllAttendance(
+              employeeList.map((employee) => employee.id),
+              range.startIso,
+              range.endIso
+            )
+          : [];
+
+        // ---- hari libur (yang dibatalkan owner tidak dihitung libur)
+        const { data: holidayData, error: holidayError } = await supabase
+          .from("holidays")
+          .select("id, date, description")
+          .eq("is_cancelled", false)
+          .gte("date", range.startDate)
+          .lt("date", range.endDate)
+          .order("date", { ascending: true });
+
+        if (holidayError) {
+          console.warn("Gagal mengambil hari libur:", holidayError.message);
+        }
+
+        if (cancelled) return;
+
+        setUserRole(profile.role);
+        setUserName(profile.full_name || user.email?.split("@")[0] || "User");
+        if (cName) setCompanyName(cName);
+
+        setEmployees(employeeList);
+        setAttendances(attendanceList);
+        setHolidays((holidayData ?? []) as Holiday[]);
+      } catch (error: any) {
+        if (cancelled) return;
+
+        console.error(error);
+
+        setErrorMessage(
+          error?.message || "Terjadi kesalahan saat mengambil data."
+        );
+
+        setEmployees([]);
+        setAttendances([]);
+        setHolidays([]);
+      } finally {
+        if (!cancelled) setFetching(false);
+        setLoading(false);
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMonth, router]);
+
+  // =========================================================
+  // INFO BULAN
+  // =========================================================
+
+  const todayKey = getTodayKey();
+  const currentMonthKey = todayKey.slice(0, 7);
+  const currentYear = Number(todayKey.slice(0, 4));
+
+  const monthInfo = useMemo(() => {
+    const [yearString, monthString] = selectedMonth.split("-");
+    const year = Number(yearString);
+    const month = Number(monthString);
+
+    return {
+      year,
+      month,
+      monthName: MONTHS[month - 1],
+      isFuture: `${year}-${pad(month)}-01` > getTodayKey(),
+      isCurrentMonth: selectedMonth === getTodayKey().slice(0, 7),
+    };
+  }, [selectedMonth]);
+
+  const formattedMonth = `${monthInfo.monthName} ${monthInfo.year}`;
+
+  const holidayDateSet = useMemo(
+    () => new Set(holidays.map((holiday) => String(holiday.date).slice(0, 10))),
+    [holidays]
+  );
+
+  // Tanggal yang sudah terjadi pada bulan terpilih
+  const elapsedDates = useMemo(() => {
+    if (monthInfo.isFuture) return [];
+
+    const today = getTodayKey();
+
+    return getDatesInMonth(monthInfo.year, monthInfo.month).filter(
+      (item) => !monthInfo.isCurrentMonth || item.key <= today
+    );
+  }, [monthInfo]);
+
+  // Hari kerja = Senin-Jumat yang bukan hari libur perusahaan
+  const workingDays = useMemo(
+    () =>
+      elapsedDates.filter(
+        (item) => !isWeekendKey(item.key) && !holidayDateSet.has(item.key)
+      ),
+    [elapsedDates, holidayDateSet]
+  );
+
+  // =========================================================
+  // PERHITUNGAN REKAP
+  // =========================================================
+
+  const { rows, daily } = useMemo(() => {
+    const { isFuture } = monthInfo;
+    const today = getTodayKey();
+
+    const monthStart = createLocalDate(monthInfo.year, monthInfo.month, 1);
+    const nextMonthStart = createLocalDate(
+      monthInfo.year,
+      monthInfo.month + 1,
+      1
+    );
+
+    const dailyMap = new Map<string, DailyRow>();
+
+    workingDays.forEach((day) => {
+      const date = createLocalDate(monthInfo.year, monthInfo.month, day.day);
+
+      dailyMap.set(day.key, {
+        key: day.key,
+        label: String(day.day),
+        full: date.toLocaleDateString("id-ID", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        }),
+        present: 0,
+        late: 0,
+        sick: 0,
+        leave: 0,
+        absent: 0,
+      });
+    });
+
+    const byEmployee = new Map<string, Attendance[]>();
+
+    attendances.forEach((item) => {
+      const list = byEmployee.get(item.profile_id);
+
+      if (list) list.push(item);
+      else byEmployee.set(item.profile_id, [item]);
+    });
+
+    const result: EmployeeSummary[] = employees.map((employee) => {
+      const createdDate = new Date(employee.created_at);
+      const createdKey = getDateKey(employee.created_at);
+
+      const accountAfterMonth = createdDate >= nextMonthStart;
+      const accountCreatedInMonth =
+        createdDate >= monthStart && createdDate < nextMonthStart;
+
+      // Kelompokkan absensi per tanggal
+      const byDate = new Map<string, Attendance[]>();
+
+      (byEmployee.get(employee.id) ?? []).forEach((record) => {
+        const key = getDateKey(record.check_in || record.created_at);
+        const list = byDate.get(key);
+
+        if (list) list.push(record);
+        else byDate.set(key, [record]);
+      });
+
+      let present = 0;
+      let late = 0;
+      let sick = 0;
+      let leave = 0;
+      let absent = 0;
+      let rejected = 0;
+      let activeDays = 0;
+      const reasons: string[] = [];
+
+      if (!accountAfterMonth && !isFuture) {
+        workingDays.forEach((day) => {
+          // Tanggal sebelum akun dibuat tidak dihitung
+          if (day.key < createdKey) return;
+
+          activeDays++;
+
+          const records = byDate.get(day.key) ?? [];
+
+          // Absensi yang ditolak Admin dianggap tidak valid
+          records.forEach((record) => {
+            if (record.approval_status !== "rejected") return;
+
+            rejected++;
+
+            const reason = record.rejection_reason?.trim();
+
+            if (reason) reasons.push(reason);
+          });
+
+          const first = records.find(
+            (record) => record.approval_status !== "rejected"
+          );
+
+          let bucket: DayKey | null = null;
+
+          if (first) {
+            bucket =
+              first.status === "present"
+                ? "present"
+                : first.status === "late"
+                ? "late"
+                : first.status === "sakit"
+                ? "sick"
+                : first.status === "izin"
+                ? "leave"
+                : "absent";
+          } else if (day.key !== today) {
+            // Tidak ada absensi valid = alpa.
+            // Hari ini belum dihitung agar karyawan masih bisa absen.
+            bucket = "absent";
+          }
+
+          if (!bucket) return;
+
+          if (bucket === "present") present++;
+          if (bucket === "late") late++;
+          if (bucket === "sick") sick++;
+          if (bucket === "leave") leave++;
+          if (bucket === "absent") absent++;
+
+          const row = dailyMap.get(day.key);
+
+          if (row) row[bucket]++;
+        });
+      }
+
+      return {
+        id: employee.id,
+        name: employee.full_name || "Tanpa Nama",
+        division: employee.division,
+        createdAt: employee.created_at,
+
+        present,
+        late,
+        sick,
+        leave,
+        absent,
+        rejected,
+        rejectionReasons: Array.from(new Set(reasons)),
+
+        totalAttendances: present + late,
+        activeDays,
+
+        accountCreatedInMonth,
+        accountAfterMonth,
+        monthNotStarted: isFuture,
+      };
+    });
+
+    return { rows: result, daily: Array.from(dailyMap.values()) };
+  }, [employees, attendances, workingDays, monthInfo]);
+
+  // =========================================================
+  // URUTAN
+  // =========================================================
+
+  const sortedRows = useMemo(() => {
+    const byName = (a: EmployeeSummary, b: EmployeeSummary) =>
+      a.name.localeCompare(b.name, "id");
+
+    return [...rows].sort((a, b) => {
+      if (sortKey === "name") return byName(a, b);
+
+      if (sortKey === "division") {
+        const ad = a.division?.trim();
+        const bd = b.division?.trim();
+
+        // Yang belum punya divisi ditaruh paling bawah
+        if (!ad !== !bd) return !ad ? 1 : -1;
+
+        return (ad ?? "").localeCompare(bd ?? "", "id") || byName(a, b);
+      }
+
+      // Akun tanpa data bulan ini selalu di bawah
+      const aEmpty = a.monthNotStarted || a.accountAfterMonth;
+      const bEmpty = b.monthNotStarted || b.accountAfterMonth;
+
+      if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
+
+      if (sortKey === "absent") {
+        return (
+          b.absent - a.absent ||
+          a.totalAttendances - b.totalAttendances ||
+          byName(a, b)
+        );
+      }
+
+      return (
+        b.totalAttendances - a.totalAttendances ||
+        a.absent - b.absent ||
+        byName(a, b)
+      );
+    });
+  }, [rows, sortKey]);
+
+  const divisionMeta = useMemo(() => {
+    const map = new Map<
+      string,
+      { count: number; masuk: number; absent: number }
+    >();
+
+    rows.forEach((row) => {
+      const key = divisionLabel(row.division);
+      const meta = map.get(key) ?? { count: 0, masuk: 0, absent: 0 };
+
+      meta.count++;
+      meta.masuk += row.totalAttendances;
+      meta.absent += row.absent;
+
+      map.set(key, meta);
+    });
+
+    return map;
+  }, [rows]);
+
+  // =========================================================
+  // STATISTIK PERUSAHAAN
+  // =========================================================
+
+  const stats = useMemo(() => {
+    const active = rows.filter((row) => !row.accountAfterMonth);
+
+    const sum = (pick: (row: EmployeeSummary) => number) =>
+      active.reduce((total, row) => total + pick(row), 0);
+
+    const present = sum((r) => r.present);
+    const late = sum((r) => r.late);
+    const sick = sum((r) => r.sick);
+    const leave = sum((r) => r.leave);
+    const absent = sum((r) => r.absent);
+    const accounted = present + late + sick + leave + absent;
+    const elapsedKeys = new Set(elapsedDates.map((d) => d.key));
+
+    return {
+      employees: active.length,
+      totals: { present, late, sick, leave, absent } as Record<DayKey, number>,
+      rejected: sum((r) => r.rejected),
+      masuk: present + late,
+      accounted,
+      rate: accounted ? Math.round(((present + late) / accounted) * 100) : 0,
+      workingDays: workingDays.length,
+      weekends: elapsedDates.filter((d) => isWeekendKey(d.key)).length,
+      holidays: holidays.filter((h) => {
+        const key = String(h.date).slice(0, 10);
+
+        return elapsedKeys.has(key) && !isWeekendKey(key);
+      }).length,
+    };
+  }, [rows, workingDays, elapsedDates, holidays]);
+
+  const hasDaily = daily.some(
+    (d) => d.present + d.late + d.sick + d.leave + d.absent > 0
+  );
+
+  // =========================================================
+  // NAVIGASI BULAN
+  // =========================================================
+
+  const minYear = currentYear - 3;
+  const maxYear = currentYear + 1;
+  const yearOptions = Array.from(
+    { length: maxYear - minYear + 1 },
+    (_, i) => minYear + i
+  );
+
+  const shiftMonth = (delta: number) => {
+    let year = monthInfo.year;
+    let month = monthInfo.month + delta;
+
+    if (month < 1) {
+      month = 12;
+      year--;
+    }
+
+    if (month > 12) {
+      month = 1;
+      year++;
+    }
+
+    if (year >= minYear && year <= maxYear) {
+      setSelectedMonth(`${year}-${pad(month)}`);
+    }
+  };
+
+  const atMin = monthInfo.year === minYear && monthInfo.month === 1;
+  const atMax = monthInfo.year === maxYear && monthInfo.month === 12;
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
+
+  // =========================================================
+  // LOADING AWAL
+  // =========================================================
+
+  if (loading) {
+    return (
+      <main
+        className={`${BASE} flex min-h-screen items-center justify-center bg-[#F2F4F9]`}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-slate-200 border-t-[#0E1A3A]" />
+          <p className="text-sm font-medium text-slate-500">
+            Menyiapkan rekap bulanan...
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  const roleLabel =
+    userRole === "owner" ? "Owner" : userRole === "admin" ? "Admin" : userRole;
+
+  const sortLabel = SORTS.find((s) => s.key === sortKey)?.label ?? "";
+
+  const summary = monthInfo.isFuture
+    ? "Bulan ini belum dimulai, jadi kehadiran dan alpa belum dihitung."
+    : stats.employees === 0
+    ? "Belum ada karyawan yang terdaftar pada bulan ini."
+    : `${stats.masuk} kali masuk, ${
+        stats.totals.sick + stats.totals.leave
+      } sakit atau izin, dan ${stats.totals.absent} alpa dari ${
+        stats.accounted
+      } hari kerja karyawan.`;
+
+  const groupByDivision = sortKey === "division";
+
+  const headerCell = "px-3 py-3.5 text-center";
+
+  // =========================================================
+  // RENDER
+  // =========================================================
+
   return (
-    <div
-      className={`rounded-xl p-2.5 text-center sm:rounded-2xl sm:p-3 ${className}`}
+    <main
+      className={`${BASE} min-h-screen bg-[#F2F4F9] pb-16 text-slate-800 print:bg-white print:pb-0`}
     >
-      <p className="text-[7px] font-black uppercase tracking-wider opacity-70 sm:text-[8px]">
-        {label}
-      </p>
+      {/* ================= HEADER ================= */}
 
-      <p className="mt-0.5 text-sm font-black sm:text-base">
-        {value}
-      </p>
-    </div>
+      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur print:hidden">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className={`${D} flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0E1A3A] text-lg font-bold text-white`}
+            >
+              {companyName.charAt(0).toUpperCase()}
+            </div>
+
+            <div className="min-w-0">
+              <h1
+                className={`${D} truncate text-lg font-semibold leading-tight text-slate-900`}
+              >
+                {companyName}
+              </h1>
+              <p className="text-xs text-slate-500">Rekap bulanan</p>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="hidden items-center gap-2.5 md:flex">
+              <span className="max-w-[10rem] truncate text-sm font-semibold capitalize text-slate-700">
+                {userName}
+              </span>
+
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${
+                  userRole === "owner"
+                    ? "bg-violet-50 text-violet-700 ring-violet-200"
+                    : "bg-sky-50 text-sky-700 ring-sky-200"
+                }`}
+              >
+                {roleLabel}
+              </span>
+            </div>
+
+            <Link
+              href={getDashboardPath(userRole)}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              <Icon d={ICONS.back} />
+              <span className="hidden sm:inline">Dasbor</span>
+            </Link>
+
+            <button
+              onClick={handleLogout}
+              className="h-10 rounded-xl border border-slate-200 px-3.5 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* ================= VERSI CETAK ================= */}
+
+      <div className="mx-auto hidden max-w-6xl px-2 pb-6 text-slate-900 print:block">
+        <div className="flex items-center gap-4 border-b-2 border-black pb-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/svara.png"
+            alt=""
+            className="h-14 w-28 object-contain"
+          />
+
+          <div>
+            <h1 className="text-xl font-bold">{companyName}</h1>
+            <p className="text-sm font-semibold">
+              Laporan rekapitulasi kehadiran, {formattedMonth}
+            </p>
+            <p className="mt-1 text-xs">
+              Hari kerja: {stats.workingDays}. Total masuk: {stats.masuk}. Total
+              alpa: {stats.totals.absent}. Total ditolak: {stats.rejected}.
+            </p>
+            <p className="text-xs">Urutan: {sortLabel}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-8 sm:pt-8 print:p-0">
+        {/* ================= JUDUL & KONTROL BULAN ================= */}
+
+        <section className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between print:hidden">
+          <div>
+            <h2
+              className={`${D} text-3xl font-semibold text-slate-900 sm:text-4xl`}
+            >
+              Rekap bulanan
+            </h2>
+            <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-slate-500">
+              Ringkasan kehadiran tiap karyawan berdasarkan hari kerja.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex h-11 items-center rounded-xl border border-slate-200 bg-white">
+              <button
+                onClick={() => shiftMonth(-1)}
+                disabled={atMin}
+                aria-label="Bulan sebelumnya"
+                className="flex h-11 w-11 items-center justify-center rounded-l-xl text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <Icon d={ICONS.chevL} />
+              </button>
+
+              <div className="relative border-x border-slate-200">
+                <label htmlFor="rekap-month" className="sr-only">
+                  Bulan
+                </label>
+                <select
+                  id="rekap-month"
+                  value={monthInfo.month}
+                  onChange={(e) =>
+                    setSelectedMonth(`${monthInfo.year}-${pad(Number(e.target.value))}`)
+                  }
+                  className="h-11 appearance-none bg-transparent pl-3 pr-8 text-base font-semibold text-slate-700 focus:outline-none sm:text-sm"
+                >
+                  {MONTHS.map((name, i) => (
+                    <option key={name} value={i + 1}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <Icon
+                  d={ICONS.chevDown}
+                  className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                />
+              </div>
+
+              <div className="relative border-r border-slate-200">
+                <label htmlFor="rekap-year" className="sr-only">
+                  Tahun
+                </label>
+                <select
+                  id="rekap-year"
+                  value={monthInfo.year}
+                  onChange={(e) =>
+                    setSelectedMonth(`${e.target.value}-${pad(monthInfo.month)}`)
+                  }
+                  className="h-11 appearance-none bg-transparent pl-3 pr-8 text-base font-semibold text-slate-700 focus:outline-none sm:text-sm"
+                >
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+                <Icon
+                  d={ICONS.chevDown}
+                  className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                />
+              </div>
+
+              <button
+                onClick={() => shiftMonth(1)}
+                disabled={atMax}
+                aria-label="Bulan berikutnya"
+                className="flex h-11 w-11 items-center justify-center rounded-r-xl text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <Icon d={ICONS.chevR} />
+              </button>
+            </div>
+
+            {selectedMonth !== currentMonthKey && (
+              <button
+                onClick={() => setSelectedMonth(currentMonthKey)}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              >
+                Bulan ini
+              </button>
+            )}
+
+            <button
+              onClick={() => window.print()}
+              aria-label="Cetak laporan"
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#0E1A3A] px-4 text-sm font-semibold text-white transition hover:bg-[#1a2a5a]"
+            >
+              <Icon d={ICONS.print} />
+              <span className="hidden sm:inline">Cetak</span>
+            </button>
+          </div>
+        </section>
+
+        <div
+          aria-busy={fetching}
+          className={`transition-opacity ${fetching ? "opacity-60" : ""}`}
+        >
+          {errorMessage && (
+            <div
+              role="alert"
+              className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 p-4 print:hidden"
+            >
+              <p className="text-sm font-semibold text-rose-800">
+                Terjadi kesalahan
+              </p>
+              <p className="mt-1 text-sm text-rose-600">{errorMessage}</p>
+            </div>
+          )}
+
+          {/* ================= HERO ================= */}
+
+          <section className="rounded-[28px] bg-[#0E1A3A] p-6 text-white sm:p-10 print:hidden">
+            <div className="grid items-center gap-8 lg:grid-cols-[1fr_auto]">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {monthInfo.isCurrentMonth && (
+                    <span className="rounded-full bg-[#5EEAD4] px-3 py-1 text-xs font-semibold text-[#0E1A3A]">
+                      Bulan berjalan
+                    </span>
+                  )}
+
+                  {!monthInfo.isFuture && (
+                    <>
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-100">
+                        {stats.workingDays} hari kerja
+                      </span>
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-100">
+                        {stats.weekends} akhir pekan
+                      </span>
+                      <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-100">
+                        {stats.holidays} hari libur
+                      </span>
+                    </>
+                  )}
+
+                  <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-100">
+                    {stats.employees} karyawan
+                  </span>
+                </div>
+
+                <h3
+                  className={`${D} mt-4 text-4xl font-semibold leading-tight sm:text-5xl`}
+                >
+                  {formattedMonth}
+                </h3>
+
+                <p className="mt-4 max-w-lg text-[15px] leading-relaxed text-slate-300">
+                  {summary}
+                </p>
+              </div>
+
+              {!monthInfo.isFuture && (
+                <div className="relative mx-auto h-52 w-52 shrink-0 sm:h-56 sm:w-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RadialBarChart
+                      data={[{ name: "Kehadiran", value: stats.rate }]}
+                      innerRadius="80%"
+                      outerRadius="100%"
+                      startAngle={90}
+                      endAngle={-270}
+                    >
+                      <PolarAngleAxis
+                        type="number"
+                        domain={[0, 100]}
+                        tick={false}
+                        angleAxisId={0}
+                      />
+                      <RadialBar
+                        dataKey="value"
+                        cornerRadius={50}
+                        fill="#5EEAD4"
+                        background={{ fill: "rgba(255,255,255,0.12)" }}
+                      />
+                    </RadialBarChart>
+                  </ResponsiveContainer>
+
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={`${D} text-5xl font-semibold`}>
+                      {stats.rate}
+                      <span className="text-2xl text-slate-400">%</span>
+                    </span>
+                    <span className="mt-1 text-xs text-slate-300">
+                      tingkat kehadiran
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ================= RINGKASAN ANGKA ================= */}
+
+          <section className={`${card} mt-6 p-5 sm:p-6 print:hidden`}>
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+              {DAY_KEYS.map(
+                (key) =>
+                  stats.totals[key] > 0 && (
+                    <div
+                      key={key}
+                      title={`${META[key].label}: ${stats.totals[key]}`}
+                      style={{
+                        width: `${(stats.totals[key] / stats.accounted) * 100}%`,
+                        backgroundColor: META[key].color,
+                      }}
+                    />
+                  )
+              )}
+            </div>
+
+            <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-6 lg:gap-x-0 lg:divide-x lg:divide-slate-100">
+              {DAY_KEYS.map((key, i) => (
+                <div key={key} className={i === 0 ? "lg:pr-5" : "lg:px-5"}>
+                  <dt className="flex items-center gap-2 text-sm text-slate-500">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: META[key].color }}
+                    />
+                    {META[key].label}
+                  </dt>
+                  <dd
+                    className={`${D} mt-1 text-4xl font-semibold text-slate-900`}
+                  >
+                    {stats.totals[key]}
+                  </dd>
+                </div>
+              ))}
+
+              <div className="lg:pl-5">
+                <dt className="flex items-center gap-2 text-sm text-slate-500">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                  Ditolak
+                </dt>
+                <dd
+                  className={`${D} mt-1 text-4xl font-semibold text-slate-900`}
+                >
+                  {stats.rejected}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          {/* ================= GRAFIK HARIAN ================= */}
+
+          {!monthInfo.isFuture && (
+            <section className={`${card} mt-6 p-5 sm:p-7 print:hidden`}>
+              <h3 className={`${D} text-xl font-semibold text-slate-900`}>
+                Kehadiran harian
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Jumlah karyawan per status di setiap hari kerja.
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+                {DAY_KEYS.map((key) => (
+                  <span
+                    key={key}
+                    className="flex items-center gap-2 text-xs font-medium text-slate-600"
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-sm"
+                      style={{ backgroundColor: META[key].color }}
+                    />
+                    {META[key].label}
+                  </span>
+                ))}
+              </div>
+
+              {hasDaily ? (
+                <div className="mt-4 h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={daily}
+                      margin={{ top: 8, right: 4, left: -20, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        vertical={false}
+                        stroke="#EEF1F6"
+                        strokeDasharray="4 4"
+                      />
+                      <XAxis
+                        dataKey="label"
+                        interval="preserveStartEnd"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12, fill: "#64748B" }}
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12, fill: "#94A3B8" }}
+                      />
+                      <Tooltip
+                        content={<DayTooltip />}
+                        cursor={{ fill: "rgba(14,26,58,0.05)" }}
+                      />
+                      {DAY_KEYS.map((key, i) => (
+                        <Bar
+                          key={key}
+                          dataKey={key}
+                          stackId="day"
+                          fill={META[key].color}
+                          maxBarSize={22}
+                          radius={
+                            (i === DAY_KEYS.length - 1
+                              ? [6, 6, 0, 0]
+                              : 0) as any
+                          }
+                        />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="mt-4 flex h-48 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
+                  Belum ada data kehadiran pada bulan ini.
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ================= CATATAN PERHITUNGAN ================= */}
+
+          <section className="mt-6 rounded-2xl border border-slate-200/70 bg-white/60 p-4 sm:p-5 print:hidden">
+            <h3 className="text-sm font-semibold text-slate-700">
+              Cara menghitung
+            </h3>
+
+            <p className="mt-1.5 text-sm leading-relaxed text-slate-500">
+              Hari kerja adalah Senin sampai Jumat yang bukan hari libur
+              perusahaan. Alpa hanya dihitung pada hari kerja yang sudah lewat,
+              jadi hari ini belum dihitung. Akhir pekan, hari libur, tanggal
+              sebelum akun dibuat, dan bulan yang belum dimulai tidak dihitung.
+              Total masuk adalah tepat waktu ditambah terlambat. Absensi yang
+              ditolak tidak dihitung sebagai masuk.
+            </p>
+          </section>
+
+          {/* ================= DAFTAR ================= */}
+
+          <section className="mt-8 print:mt-4">
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between print:hidden">
+              <div className="flex items-center gap-3">
+                <h3
+                  className={`${D} text-xl font-semibold text-slate-900 sm:text-2xl`}
+                >
+                  Daftar karyawan
+                </h3>
+
+                <span className="rounded-full bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+                  {formattedMonth}
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <span className="text-sm font-semibold text-slate-600">
+                  Urutkan
+                </span>
+
+                <div
+                  role="group"
+                  aria-label="Urutkan daftar karyawan"
+                  className="grid grid-cols-2 gap-2 sm:flex"
+                >
+                  {SORTS.map((sort) => {
+                    const active = sortKey === sort.key;
+
+                    return (
+                      <button
+                        key={sort.key}
+                        onClick={() => setSortKey(sort.key)}
+                        aria-pressed={active}
+                        className={`h-10 rounded-xl border px-3.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0E1A3A]/30 ${
+                          active
+                            ? "border-[#0E1A3A] bg-[#0E1A3A] text-white"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {sort.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {sortedRows.length === 0 ? (
+              <div
+                className={`${card} flex min-h-[260px] items-center justify-center border-dashed p-8 text-center`}
+              >
+                <div>
+                  <h4 className={`${D} text-xl font-semibold text-slate-800`}>
+                    Belum ada karyawan
+                  </h4>
+                  <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
+                    Belum ada karyawan yang terdaftar di perusahaan ini.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* KARTU: HP & tablet */}
+
+                <div className="rekap-cards grid gap-3 sm:grid-cols-2 lg:hidden">
+                  {sortedRows.map((employee, index) => {
+                    const label = divisionLabel(employee.division);
+                    const showGroup =
+                      groupByDivision &&
+                      (index === 0 ||
+                        divisionLabel(sortedRows[index - 1].division) !== label);
+                    const meta = divisionMeta.get(label);
+
+                    return (
+                      <div key={employee.id} className="contents">
+                        {showGroup && (
+                          <div
+                            className={`col-span-full flex items-baseline justify-between gap-3 ${
+                              index === 0 ? "" : "pt-3"
+                            }`}
+                          >
+                            <h4 className="text-sm font-semibold text-slate-800">
+                              {label}
+                            </h4>
+                            <span className="text-xs text-slate-500">
+                              {meta?.count} karyawan, {meta?.absent} alpa
+                            </span>
+                          </div>
+                        )}
+
+                        <EmployeeCard employee={employee} />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* TABEL: layar lebar */}
+
+                <div
+                  className={`${card} rekap-table hidden overflow-hidden lg:block`}
+                >
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50/70 text-xs font-semibold text-slate-400">
+                        <th scope="col" className="px-6 py-3.5">
+                          Karyawan
+                        </th>
+                        <th scope="col" className={headerCell}>
+                          Tepat waktu
+                        </th>
+                        <th scope="col" className={headerCell}>
+                          Terlambat
+                        </th>
+                        <th scope="col" className={headerCell}>
+                          Sakit
+                        </th>
+                        <th scope="col" className={headerCell}>
+                          Izin
+                        </th>
+                        <th scope="col" className={headerCell}>
+                          Alpa
+                        </th>
+                        <th scope="col" className={headerCell}>
+                          Ditolak
+                        </th>
+                        <th scope="col" className={headerCell}>
+                          Total masuk
+                        </th>
+                        <th scope="col" className={headerCell}>
+                          Hari kerja
+                        </th>
+                        <th scope="col" className="px-6 py-3.5 print:hidden">
+                          <span className="sr-only">Detail</span>
+                        </th>
+                      </tr>
+                    </thead>
+
+                    <tbody className="divide-y divide-slate-100">
+                      {sortedRows.map((employee, index) => {
+                        const label = divisionLabel(employee.division);
+                        const showGroup =
+                          groupByDivision &&
+                          (index === 0 ||
+                            divisionLabel(sortedRows[index - 1].division) !==
+                              label);
+                        const meta = divisionMeta.get(label);
+                        const noData =
+                          employee.monthNotStarted || employee.accountAfterMonth;
+
+                        return (
+                          <Fragment key={employee.id}>
+                            {showGroup && (
+                              <tr className="bg-slate-50/80">
+                                <td
+                                  colSpan={10}
+                                  className="px-6 py-2.5 text-sm font-semibold text-slate-700"
+                                >
+                                  {label}
+                                  <span className="ml-3 text-xs font-medium text-slate-400">
+                                    {meta?.count} karyawan, {meta?.absent} alpa
+                                  </span>
+                                </td>
+                              </tr>
+                            )}
+
+                            <tr className="transition-colors hover:bg-slate-50/60 print:break-inside-avoid">
+                              <td className="px-6 py-3.5">
+                                <div className="flex items-center gap-3">
+                                  <Avatar name={employee.name} />
+
+                                  <div className="min-w-0">
+                                    <Link
+                                      href={`/rekap/${employee.id}`}
+                                      className="block max-w-[14rem] truncate text-sm font-semibold text-slate-900 hover:underline"
+                                    >
+                                      {employee.name}
+                                    </Link>
+
+                                    {!groupByDivision && (
+                                      <p className="max-w-[14rem] truncate text-xs text-slate-500">
+                                        {label}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              {noData ? (
+                                <td
+                                  colSpan={8}
+                                  className="px-3 py-3.5 text-sm italic text-slate-400"
+                                >
+                                  {noDataText(employee)}
+                                </td>
+                              ) : (
+                                <>
+                                  <td className="px-3 py-3.5 text-center">
+                                    <Num
+                                      value={employee.present}
+                                      tone={META.present.text}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-3.5 text-center">
+                                    <Num
+                                      value={employee.late}
+                                      tone={META.late.text}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-3.5 text-center">
+                                    <Num
+                                      value={employee.sick}
+                                      tone={META.sick.text}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-3.5 text-center">
+                                    <Num
+                                      value={employee.leave}
+                                      tone={META.leave.text}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-3.5 text-center">
+                                    <Num
+                                      value={employee.absent}
+                                      tone="text-rose-600"
+                                    />
+                                  </td>
+                                  <td
+                                    className="px-3 py-3.5 text-center"
+                                    title={
+                                      employee.rejected > 0
+                                        ? employee.rejectionReasons.length
+                                          ? employee.rejectionReasons.join("\n")
+                                          : "Admin menolak tanpa menuliskan alasan."
+                                        : undefined
+                                    }
+                                  >
+                                    <Num
+                                      value={employee.rejected}
+                                      tone="text-slate-600"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-3.5 text-center">
+                                    <span
+                                      className={`${D} text-base font-semibold tabular-nums text-slate-900`}
+                                    >
+                                      {employee.totalAttendances}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3.5 text-center">
+                                    <span className="text-sm tabular-nums text-slate-500">
+                                      {employee.activeDays}
+                                    </span>
+                                  </td>
+                                </>
+                              )}
+
+                              <td className="px-6 py-3.5 text-right print:hidden">
+                                <Link
+                                  href={`/rekap/${employee.id}`}
+                                  aria-label={`Detail ${employee.name}`}
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+                                >
+                                  <Icon d={ICONS.chevR} />
+                                </Link>
+                              </td>
+                            </tr>
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+
+      {/* Cetak: paksa tabel tampil, kartu disembunyikan */}
+
+      <style jsx global>{`
+        @media print {
+          @page {
+            size: landscape;
+            margin: 10mm;
+          }
+
+          body,
+          main {
+            background: white !important;
+          }
+
+          .rekap-table {
+            display: block !important;
+            border: none !important;
+          }
+
+          .rekap-cards {
+            display: none !important;
+          }
+        }
+      `}</style>
+    </main>
   );
 }
