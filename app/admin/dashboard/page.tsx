@@ -1,312 +1,594 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
+import { Bricolage_Grotesque, Figtree } from "next/font/google";
 
 import {
   LineChart,
   Line,
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  ReferenceLine,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
+  RadialBarChart,
+  RadialBar,
+  PolarAngleAxis,
 } from "recharts";
 
-export default function DashboardPage() {
+import { supabase } from "@/lib/supabase";
+
+// =========================================================
+// LOGO
+// Taruh gambar di folder public/logo lalu sesuaikan nama
+// file & ekstensinya di sini. Contoh: public/logo/logo.png
+// Kalau file tidak ditemukan, otomatis tampil huruf pertama
+// nama perusahaan.
+// =========================================================
+
+const LOGO_SRC = "/logo/logo.png";
+
+// Absen masuk pada jam ini atau setelahnya dihitung terlambat
+const LATE_HOUR = 9;
+
+// =========================================================
+// FONT & TOKEN DESAIN (sama dengan Owner Dashboard)
+// =========================================================
+
+const fontDisplay = Bricolage_Grotesque({
+  subsets: ["latin"],
+  variable: "--font-display",
+});
+
+const fontBody = Figtree({
+  subsets: ["latin"],
+  variable: "--font-body",
+});
+
+const FONT_VARS = `${fontDisplay.variable} ${fontBody.variable}`;
+const D = "font-[family-name:var(--font-display)]";
+const BASE = `${FONT_VARS} font-[family-name:var(--font-body)]`;
+
+const card = "rounded-2xl border border-slate-200/70 bg-white p-6 sm:p-7";
+
+const inputCls =
+  "h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-base text-slate-800 placeholder:text-slate-400 focus:border-[#0E1A3A] focus:outline-none focus:ring-2 focus:ring-[#0E1A3A]/15 sm:text-sm";
+
+const btnPrimary =
+  "inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#0E1A3A] px-6 text-sm font-semibold text-white transition hover:bg-[#1a2a5a] disabled:cursor-not-allowed disabled:opacity-40";
+
+const STATUS = {
+  present: {
+    label: "Tepat waktu",
+    color: "#10B981",
+    badge: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  },
+  late: {
+    label: "Terlambat",
+    color: "#EAB308",
+    badge: "bg-yellow-50 text-yellow-700 ring-yellow-200",
+  },
+  sakit: {
+    label: "Sakit",
+    color: "#F97316",
+    badge: "bg-orange-50 text-orange-700 ring-orange-200",
+  },
+  izin: {
+    label: "Izin",
+    color: "#8B5CF6",
+    badge: "bg-violet-50 text-violet-700 ring-violet-200",
+  },
+  absent: {
+    label: "Alpa",
+    color: "#F43F5E",
+    badge: "bg-rose-50 text-rose-700 ring-rose-200",
+  },
+} as const;
+
+type StatusKey = keyof typeof STATUS;
+
+const SERIES: StatusKey[] = ["present", "late", "sakit", "izin"];
+
+const ICONS = {
+  camera:
+    "M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1ZM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z",
+  retake:
+    "M20 11a8.1 8.1 0 0 0-14.9-4M4 5v4h4M4 13a8.1 8.1 0 0 0 14.9 4M20 19v-4h-4",
+  close: "M18 6 6 18M6 6l12 12",
+  plus: "M12 5v14M5 12h14",
+  check: "m5 12.5 4.5 4.5L19 7.5",
+  pin: "M12 21s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12ZM12 11.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z",
+};
+
+// =========================================================
+// HELPER
+// =========================================================
+
+// Tanggal lokal (WIB di perangkat) dalam format YYYY-MM-DD
+const toDateKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+
+const fmtTime = (iso: string | null | undefined) =>
+  iso
+    ? new Date(iso).toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : "--:--";
+
+function Icon({
+  d,
+  className = "h-4 w-4",
+}: {
+  d: string;
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d={d} />
+    </svg>
+  );
+}
+
+function BrandLogo({ name }: { name: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div
+        className={`${D} flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0E1A3A] text-lg font-bold text-white`}
+      >
+        {name.charAt(0).toUpperCase()}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={LOGO_SRC}
+        alt={`Logo ${name}`}
+        onError={() => setFailed(true)}
+        className="h-full w-full object-contain p-1"
+      />
+    </div>
+  );
+}
+
+function WeekTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+
+  const row = payload[0].payload;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs shadow-lg">
+      <p className="mb-1.5 font-semibold text-slate-800">{row.full}</p>
+
+      {SERIES.map((key) => (
+        <div
+          key={key}
+          className="flex items-center justify-between gap-6 py-0.5"
+        >
+          <span className="flex items-center gap-2 text-slate-500">
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: STATUS[key].color }}
+            />
+            {STATUS[key].label}
+          </span>
+
+          <span className="font-semibold text-slate-800">{row[key]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ArrivalTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+
+  const row = payload[0].payload;
+  const st = STATUS[row.status as StatusKey];
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs shadow-lg">
+      <p className="font-semibold text-slate-800">{label}</p>
+      <p className="mt-1 text-slate-600">Jam masuk {row.waktuAsli}</p>
+      {st && <p className="text-slate-500">{st.label}</p>}
+    </div>
+  );
+}
+
+function ProductivityTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs shadow-lg">
+      <p className="font-semibold text-slate-800">{label}</p>
+      <p className="mt-1 text-slate-600">
+        {payload[0].payload.jumlahTugas} pekerjaan
+      </p>
+    </div>
+  );
+}
+
+// =========================================================
+// HALAMAN
+// =========================================================
+
+export default function AdminDashboardPage() {
   const router = useRouter();
 
-  // =========================================================
-  // STATE UMUM
-  // =========================================================
-
+  // ---------- umum
   const [loading, setLoading] = useState(true);
-
-  const [userEmail, setUserEmail] = useState("");
-  const [userRole, setUserRole] = useState("");
   const [userName, setUserName] = useState("");
+  const [userRole, setUserRole] = useState("");
   const [companyName, setCompanyName] = useState("Company Attendance");
   const [userId, setUserId] = useState("");
   const [profileCreatedAt, setProfileCreatedAt] = useState<string | null>(null);
 
-  // =========================================================
-  // STATE MONITORING PERUSAHAAN (ADMIN)
-  // =========================================================
+  const [notice, setNotice] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
+  // ---------- monitoring perusahaan (admin)
   const [companyEmployeeCount, setCompanyEmployeeCount] = useState(0);
   const [companyPresentCount, setCompanyPresentCount] = useState(0);
   const [companyLateCount, setCompanyLateCount] = useState(0);
   const [companySickCount, setCompanySickCount] = useState(0);
   const [companyLeaveCount, setCompanyLeaveCount] = useState(0);
-  const [companyMissingCount, setCompanyMissingCount] = useState(0);
-  const [companyTodayAttendance, setCompanyTodayAttendance] = useState<any[]>([]);
-  const [companyDailyReports, setCompanyDailyReports] = useState<any[]>([]);
-  const [companyTrendData, setCompanyTrendData] = useState<any[]>([]);
+  const [companyMissing, setCompanyMissing] = useState<any[]>([]);
+  const [companyReports, setCompanyReports] = useState<any[]>([]);
+  const [companyTrend, setCompanyTrend] = useState<any[]>([]);
 
-  // =========================================================
-  // STATE ABSENSI KARYAWAN
-  // =========================================================
-
-  const [todayAttendanceId, setTodayAttendanceId] =
-    useState<string | null>(null);
-
+  // ---------- absensi saya
+  const [todayAttendanceId, setTodayAttendanceId] = useState<string | null>(
+    null
+  );
   const [hasCheckedIn, setHasCheckedIn] = useState(false);
   const [hasCheckedOut, setHasCheckedOut] = useState(false);
   const [todayStatus, setTodayStatus] = useState<string | null>(null);
-  const [todayApprovalStatus, setTodayApprovalStatus] = useState<string | null>(null);
-  const [todayRejectionReason, setTodayRejectionReason] = useState<string | null>(null);
+  const [todayApprovalStatus, setTodayApprovalStatus] = useState<
+    string | null
+  >(null);
+  const [todayRejectionReason, setTodayRejectionReason] = useState<
+    string | null
+  >(null);
+  const [todayCheckIn, setTodayCheckIn] = useState<string | null>(null);
+  const [todayTaskList, setTodayTaskList] = useState<string[]>([]);
 
-  // =========================================================
-  // STATE LAPORAN PEKERJAAN (TASK LIST) SAAT ABSEN PULANG
-  // =========================================================
-
+  // ---------- laporan pekerjaan saat absen pulang
   const [dailyTasks, setDailyTasks] = useState<string[]>([""]);
   const taskInputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  // Menyimpan task_list milik absensi HARI INI (untuk ditampilkan
-  // kembali setelah karyawan selesai absen pulang)
-  const [todayTaskList, setTodayTaskList] = useState<string[]>([]);
-
-  // =========================================================
-  // STATE FOTO & KAMERA
-  // =========================================================
-
+  // ---------- foto, kamera & GPS
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-
   const [employeeLocation, setEmployeeLocation] = useState<{
     lat: number;
     lng: number;
   } | null>(null);
-
+  const [gpsStatus, setGpsStatus] = useState<
+    "idle" | "loading" | "ok" | "denied"
+  >("idle");
   const [isTakingAttendance, setIsTakingAttendance] = useState(false);
 
-  // =========================================================
-  // STATE RIWAYAT
-  // =========================================================
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
 
+  // ---------- riwayat & hari libur
   const [myAttendanceHistory, setMyAttendanceHistory] = useState<any[]>([]);
-
-  // =========================================================
-  // STATE HARI LIBUR
-  // =========================================================
-
   const [isTodayHoliday, setIsTodayHoliday] = useState(false);
   const [holidayDesc, setHolidayDesc] = useState("");
   const [monthlyHolidays, setMonthlyHolidays] = useState<string[]>([]);
 
-  // =========================================================
-  // STATE SAKIT / IZIN
-  // =========================================================
-
+  // ---------- sakit / izin
   const [attendanceTab, setAttendanceTab] = useState<
     "hadir" | "sakit" | "izin"
   >("hadir");
-
   const [reasonText, setReasonText] = useState("");
 
   // =========================================================
-  // STATE KAMERA
+  // KAMERA & GPS
   // =========================================================
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stopCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
 
-  const [isCameraActive, setIsCameraActive] = useState(false);
-  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+    if (videoRef.current) videoRef.current.srcObject = null;
 
-  // =========================================================
-  // STOP CAMERA SAAT PAGE DITINGGALKAN
-  // =========================================================
-
-  useEffect(() => {
-    return () => stopCamera();
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setIsCameraActive(false);
   }, []);
 
-  // =========================================================
-  // STOP CAMERA KETIKA PINDAH TAB
-  // =========================================================
-
-  useEffect(() => {
-    if (attendanceTab !== "hadir") {
-      stopCamera();
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGpsStatus("denied");
+      return;
     }
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attendanceTab]);
+    setGpsStatus("loading");
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setEmployeeLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setGpsStatus("ok");
+      },
+      () => setGpsStatus("denied"),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }, []);
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      setIsCameraActive(true);
+
+      setPhoto(null);
+      setPhotoPreview(null);
+
+      requestLocation();
+    } catch (err) {
+      console.error(err);
+
+      setNotice({
+        type: "error",
+        text: "Gagal mengakses kamera. Pastikan izin kamera sudah diberikan di browser.",
+      });
+    }
+  };
+
+  const takePhoto = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || !video.videoWidth) return;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const context = canvas.getContext("2d");
+
+    if (!context) return;
+
+    // Mirror foto agar seperti kamera depan
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+
+        const file = new File([blob], "selfie-live.jpg", {
+          type: "image/jpeg",
+        });
+
+        setPhoto(file);
+        setPhotoPreview(URL.createObjectURL(file));
+
+        stopCamera();
+      },
+      "image/jpeg",
+      0.8
+    );
+  };
+
+  const retakePhoto = () => {
+    setPhoto(null);
+    setPhotoPreview(null);
+
+    startCamera();
+  };
+
+  const resetCapture = () => {
+    stopCamera();
+    setPhoto(null);
+    setPhotoPreview(null);
+    setEmployeeLocation(null);
+    setGpsStatus("idle");
+    setReasonText("");
+    setDailyTasks([""]);
+  };
+
+  // Hubungkan stream kamera ke elemen video
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [isCameraActive]);
+
+  // Matikan kamera saat halaman ditinggalkan
+  useEffect(() => {
+    return () => stopCamera();
+  }, [stopCamera]);
+
+  // Matikan kamera saat pindah tab
+  useEffect(() => {
+    if (attendanceTab !== "hadir") stopCamera();
+  }, [attendanceTab, stopCamera]);
+
+  // Bebaskan memori preview foto
+  useEffect(() => {
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+    };
+  }, [photoPreview]);
+
+  // Notifikasi hilang otomatis
+  useEffect(() => {
+    if (!notice) return;
+
+    const timer = setTimeout(() => setNotice(null), 4000);
+
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   // =========================================================
   // LOAD DASHBOARD
   // =========================================================
 
-  useEffect(() => {
-    const loadDashboard = async () => {
-      try {
-        // -----------------------------------------------------
-        // CEK USER LOGIN
-        // -----------------------------------------------------
+  const loadDashboard = useCallback(async () => {
+    try {
+      // ---- cek login
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login");
+        return;
+      }
 
-        if (!user) {
-          router.push("/login");
-          return;
+      setUserId(user.id);
+
+      // ---- profile
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("*, companies(name)")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (profileError) console.error("Profile Error:", profileError);
+
+      if (!profile) {
+        setUserRole("employee");
+        setUserName(user.email?.split("@")[0] || "User");
+        return;
+      }
+
+      setUserRole(profile.role);
+      setUserName(
+        profile.full_name || user.email?.split("@")[0] || "Admin"
+      );
+
+      // Batas awal perhitungan alpa
+      setProfileCreatedAt(profile.created_at ?? null);
+
+      const company: any = (profile as any).companies;
+      const cName = Array.isArray(company) ? company[0]?.name : company?.name;
+
+      if (cName) setCompanyName(cName);
+
+      // Owner memakai dasbor owner
+      if (profile.role === "owner") {
+        router.push("/owner/dashboard");
+        return;
+      }
+
+      // ---- batas hari ini (waktu lokal perangkat)
+      const today = new Date();
+      const todayStr = toDateKey(today);
+
+      const todayStartIso = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate()
+      ).toISOString();
+
+      const todayEndIso = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate() + 1
+      ).toISOString();
+
+      // =====================================================
+      // MONITORING PERUSAHAAN (ADMIN)
+      // =====================================================
+
+      if (profile.role === "admin" && profile.company_id) {
+        const { data: companyProfiles, error: companyProfilesError } =
+          await supabase
+            .from("profiles")
+            .select("id, full_name, role, email")
+            .eq("company_id", profile.company_id)
+            .neq("role", "owner");
+
+        if (companyProfilesError) {
+          console.error("Company Profiles Error:", companyProfilesError);
         }
 
-        setUserEmail(user.email ?? "");
-        setUserId(user.id);
+        const employees = companyProfiles ?? [];
+        const profileIds = employees.map((item) => item.id);
 
-        // -----------------------------------------------------
-        // AMBIL PROFILE
-        // -----------------------------------------------------
+        setCompanyEmployeeCount(profileIds.length);
 
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("*, companies(name)")
-          .eq("id", user.id)
-          .maybeSingle();
-
-        if (profileError) {
-          console.error("Profile Error:", profileError);
-        }
-
-        // -----------------------------------------------------
-        // JIKA PROFILE TIDAK DITEMUKAN
-        // -----------------------------------------------------
-
-        if (!profile) {
-          setUserRole("employee");
-          setUserName(user.email?.split("@")[0] || "User");
-          setLoading(false);
-          return;
-        }
-
-        // -----------------------------------------------------
-        // SIMPAN DATA USER
-        // -----------------------------------------------------
-
-        setUserRole(profile.role);
-        setUserName(
-          profile.full_name ||
-            user.email?.split("@")[0] ||
-            "Employee"
-        );
-
-        // Tanggal profile/user dibuat.
-        // Dipakai sebagai batas awal perhitungan ALPA.
-        setProfileCreatedAt(profile.created_at ?? null);
-
-        // -----------------------------------------------------
-        // AMBIL NAMA PERUSAHAAN
-        // -----------------------------------------------------
-
-        if (profile?.companies) {
-          const companyData = profile.companies as any;
-
-          setCompanyName(
-            companyData.name || "Company Attendance"
-          );
-        }
-
-        // =====================================================
-        // OWNER TETAP MENGGUNAKAN DASHBOARD OWNER
-        // ADMIN MENGGUNAKAN DASHBOARD INI + MONITORING PERUSAHAAN
-        // =====================================================
-
-        if (profile.role === "owner") {
-          router.push("/owner/dashboard");
-          return;
-        }
-
-        // =====================================================
-        // TANGGAL HARI INI
-        // =====================================================
-
-        // =====================================================
-        // TANGGAL HARI INI (LOCAL TIME)
-        // =====================================================
-        const today = new Date();
-
-        const todayStr = `${today.getFullYear()}-${String(
-          today.getMonth() + 1
-        ).padStart(2, "0")}-${String(
-          today.getDate()
-        ).padStart(2, "0")}`;
-
-        // =====================================================
-        // MONITORING PERUSAHAAN UNTUK ADMIN
-        // Data ini hanya dijalankan untuk admin.
-        // Struktur data mengikuti dashboard owner, tetapi
-        // dashboard visual tetap memakai desain karyawan.
-        // =====================================================
-
-        if (profile.role === "admin" && profile.company_id) {
-          const { data: companyProfiles, error: companyProfilesError } =
+        if (profileIds.length > 0) {
+          const { data: todayRowsData, error: todayCompanyError } =
             await supabase
-              .from("profiles")
-              .select("id, full_name, role, email")
-              .eq("company_id", profile.company_id)
-              .neq("role", "owner");
+              .from("attendance")
+              .select(
+                "id, profile_id, status, check_in, created_at, task_list, task_count, approval_status"
+              )
+              .in("profile_id", profileIds)
+              .gte("created_at", todayStartIso)
+              .lt("created_at", todayEndIso)
+              .order("created_at", { ascending: false });
 
-          if (companyProfilesError) {
-            console.error("Company Profiles Error:", companyProfilesError);
+          if (todayCompanyError) {
+            console.error("Company Today Attendance Error:", todayCompanyError);
           }
 
-          const employees = companyProfiles ?? [];
-          const profileIds = employees.map((item) => item.id);
-          setCompanyEmployeeCount(profileIds.length);
+          const todayRows = todayRowsData ?? [];
 
-          if (profileIds.length > 0) {
-            const { data: todayCompanyAttendance, error: todayCompanyError } =
-              await supabase
-                .from("attendance")
-                .select("id, profile_id, status, check_in, check_out, photo_check_in, photo_check_out, created_at, latitude, longitude, latitude_out, longitude_out, task_list, task_count, approval_status, rejection_reason")
-                .in("profile_id", profileIds)
-                .gte("created_at", `${todayStr}T00:00:00Z`)
-                .lte("created_at", `${todayStr}T23:59:59Z`)
-                .order("created_at", { ascending: false });
+          let present = 0;
+          let late = 0;
+          let sick = 0;
+          let leave = 0;
 
-            if (todayCompanyError) {
-              console.error("Company Today Attendance Error:", todayCompanyError);
-            }
+          todayRows.forEach((item) => {
+            if (item.approval_status === "rejected") return;
+            if (item.status === "present") present++;
+            if (item.status === "late") late++;
+            if (item.status === "sakit") sick++;
+            if (item.status === "izin") leave++;
+          });
 
-            const todayRows = todayCompanyAttendance ?? [];
-            setCompanyTodayAttendance(todayRows);
+          setCompanyPresentCount(present);
+          setCompanyLateCount(late);
+          setCompanySickCount(sick);
+          setCompanyLeaveCount(leave);
 
-            let present = 0;
-            let late = 0;
-            let sick = 0;
-            let leave = 0;
+          const attendedIds = new Set(todayRows.map((item) => item.profile_id));
 
-            todayRows.forEach((item) => {
-              if (item.approval_status === "rejected") return;
-              if (item.status === "present") present++;
-              if (item.status === "late") late++;
-              if (item.status === "sakit") sick++;
-              if (item.status === "izin") leave++;
-            });
+          setCompanyMissing(
+            employees.filter((employee) => !attendedIds.has(employee.id))
+          );
 
-            setCompanyPresentCount(present);
-            setCompanyLateCount(late);
-            setCompanySickCount(sick);
-            setCompanyLeaveCount(leave);
-
-            const attendedIds = new Set(todayRows.map((item) => item.profile_id));
-            setCompanyMissingCount(
-              employees.filter((employee) => !attendedIds.has(employee.id)).length
-            );
-
-            // Laporan pekerjaan harian tim.
-            const reports = todayRows
+          // Laporan pekerjaan harian tim
+          setCompanyReports(
+            todayRows
               .filter(
                 (item) =>
                   Array.isArray(item.task_list) &&
@@ -314,288 +596,172 @@ export default function DashboardPage() {
                   item.approval_status !== "rejected"
               )
               .map((item) => ({
-                ...item,
-                employee_name:
-                  employees.find((employee) => employee.id === item.profile_id)?.full_name ||
-                  "Unknown",
+                id: item.id,
+                tasks: item.task_list as string[],
+                name:
+                  employees.find((employee) => employee.id === item.profile_id)
+                    ?.full_name || "Unknown",
               }))
-              .slice(0, 8);
+              .slice(0, 8)
+          );
 
-            setCompanyDailyReports(reports);
+          // Tren kehadiran 7 hari terakhir
+          const trendStart = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            today.getDate() - 6
+          );
 
-            // Tren kehadiran 7 hari terakhir.
-            const trendStart = new Date(today);
-            trendStart.setDate(trendStart.getDate() - 6);
-            trendStart.setHours(0, 0, 0, 0);
+          const { data: trendRows, error: trendError } = await supabase
+            .from("attendance")
+            .select("profile_id, status, created_at, approval_status")
+            .in("profile_id", profileIds)
+            .gte("created_at", trendStart.toISOString())
+            .lt("created_at", todayEndIso);
 
-            const trendEnd = new Date(today);
-            trendEnd.setDate(trendEnd.getDate() + 1);
-            trendEnd.setHours(0, 0, 0, 0);
+          if (trendError) console.error("Company Trend Error:", trendError);
 
-            const { data: trendRows, error: trendError } = await supabase
-              .from("attendance")
-              .select("profile_id, status, created_at, approval_status")
-              .in("profile_id", profileIds)
-              .gte("created_at", trendStart.toISOString())
-              .lt("created_at", trendEnd.toISOString());
+          const trendMap: Record<string, any> = {};
 
-            if (trendError) {
-              console.error("Company Trend Error:", trendError);
-            }
+          for (let i = 0; i < 7; i++) {
+            const d = new Date(
+              trendStart.getFullYear(),
+              trendStart.getMonth(),
+              trendStart.getDate() + i
+            );
 
-            const trendMap: Record<string, { tanggal: string; hadir: number; terlambat: number }> = {};
-
-            for (let i = 0; i < 7; i++) {
-              const d = new Date(trendStart);
-              d.setDate(trendStart.getDate() + i);
-              const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-              trendMap[key] = {
-                tanggal: d.toLocaleDateString("id-ID", { day: "numeric", month: "short" }),
-                hadir: 0,
-                terlambat: 0,
-              };
-            }
-
-            (trendRows ?? []).forEach((item) => {
-              if (item.approval_status === "rejected" || !item.created_at) return;
-              const d = new Date(item.created_at);
-              const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-              if (!trendMap[key]) return;
-              if (item.status === "present") trendMap[key].hadir++;
-              if (item.status === "late") trendMap[key].terlambat++;
-            });
-
-            setCompanyTrendData(Object.values(trendMap));
-          } else {
-            setCompanyTodayAttendance([]);
-            setCompanyDailyReports([]);
-            setCompanyMissingCount(0);
-            setCompanyTrendData([]);
+            trendMap[toDateKey(d)] = {
+              label: d.toLocaleDateString("id-ID", { weekday: "short" }),
+              full: d.toLocaleDateString("id-ID", {
+                weekday: "long",
+                day: "numeric",
+                month: "long",
+              }),
+              present: 0,
+              late: 0,
+              sakit: 0,
+              izin: 0,
+            };
           }
-        }
 
-        // =====================================================
-        // CEK HARI LIBUR
-        // FIX: tambahkan filter is_cancelled = false, karena
-        // pembatalan hari libur hanya meng-UPDATE row (bukan
-        // menghapusnya). Tanpa filter ini, hari libur yang
-        // sudah dibatalkan oleh owner tetap terbaca "libur"
-        // di sisi karyawan sehingga form absensi tetap terkunci.
-        // =====================================================
+          (trendRows ?? []).forEach((item) => {
+            if (item.approval_status === "rejected" || !item.created_at) return;
 
-        const { data: holidayData, error: holidayError } =
-          await supabase
-            .from("holidays")
-            .select("description")
-            .eq("date", todayStr)
-            .eq("is_cancelled", false)
-            .maybeSingle();
+            const row = trendMap[toDateKey(new Date(item.created_at))];
 
-        if (holidayError) {
-          console.error(
-            "Holiday Error:",
-            holidayError
-          );
-        }
-
-        if (holidayData) {
-          setIsTodayHoliday(true);
-          setHolidayDesc(holidayData.description);
-        } else {
-          // pastikan reset ke false, jaga-jaga kalau ada
-          // reload/refetch dan sebelumnya sempat true
-          setIsTodayHoliday(false);
-          setHolidayDesc("");
-        }
-
-        // =====================================================
-        // AMBIL ABSENSI HARI INI
-        // =====================================================
-
-        const {
-          data: myTodayAttendance,
-          error: todayError,
-        } = await supabase
-          .from("attendance")
-          .select("*")
-          .eq("profile_id", user.id)
-          .gte(
-            "created_at",
-            `${todayStr}T00:00:00Z`
-          )
-          .lte(
-            "created_at",
-            `${todayStr}T23:59:59Z`
-          )
-          .maybeSingle();
-
-        if (todayError) {
-          console.error(
-            "Today's Attendance Error:",
-            todayError
-          );
-        }
-
-        if (myTodayAttendance) {
-          setTodayAttendanceId(
-            myTodayAttendance.id
-          );
-
-          setHasCheckedIn(
-            !!myTodayAttendance.check_in
-          );
-
-          setHasCheckedOut(
-            !!myTodayAttendance.check_out
-          );
-
-          setTodayStatus(
-            myTodayAttendance.status
-          );
-
-          setTodayApprovalStatus(
-            myTodayAttendance.approval_status ?? null
-          );
-
-          setTodayRejectionReason(
-            myTodayAttendance.rejection_reason ?? null
-          );
-
-          // ---------------------------------------------------
-          // TASK LIST HARI INI (jika sudah pernah absen pulang)
-          // ---------------------------------------------------
-
-          setTodayTaskList(
-            Array.isArray(myTodayAttendance.task_list)
-              ? myTodayAttendance.task_list
-              : []
-          );
-        }
-
-        // =====================================================
-        // AMBIL RIWAYAT ABSENSI BULAN BERJALAN
-        // Statistik dashboard hanya menghitung bulan ini.
-        // =====================================================
-
-        const monthStart = new Date(
-          today.getFullYear(),
-          today.getMonth(),
-          1,
-          0,
-          0,
-          0,
-          0
-        );
-
-        const tomorrow = new Date(
-          today.getFullYear(),
-          today.getMonth(),
-          today.getDate() + 1,
-          0,
-          0,
-          0,
-          0
-        );
-
-        const {
-          data: myHistory,
-          error: historyError,
-        } = await supabase
-          .from("attendance")
-          .select(
-            "created_at, status, check_in, task_count, approval_status, rejection_reason"
-          )
-          .eq("profile_id", user.id)
-          .gte("created_at", monthStart.toISOString())
-          .lt("created_at", tomorrow.toISOString())
-          .order("created_at", {
-            ascending: false,
+            if (row && SERIES.includes(item.status as StatusKey)) {
+              row[item.status] += 1;
+            }
           });
 
-        if (historyError) {
-          console.error(
-            "History Error:",
-            historyError
-          );
+          setCompanyTrend(Object.values(trendMap));
+        } else {
+          setCompanyMissing([]);
+          setCompanyReports([]);
+          setCompanyTrend([]);
         }
+      }
 
-        setMyAttendanceHistory(
-          myHistory ?? []
-        );
+      // =====================================================
+      // CEK HARI LIBUR (yang dibatalkan owner tidak dihitung)
+      // =====================================================
 
-        // =====================================================
-        // AMBIL HARI LIBUR BULAN BERJALAN
-        // Hari libur tidak dihitung sebagai ALPA.
-        // =====================================================
+      const { data: holidayData, error: holidayError } = await supabase
+        .from("holidays")
+        .select("description")
+        .eq("date", todayStr)
+        .eq("is_cancelled", false)
+        .maybeSingle();
 
-        const monthStartDate = `${today.getFullYear()}-${String(
-          today.getMonth() + 1
-        ).padStart(2, "0")}-01`;
+      if (holidayError) console.error("Holiday Error:", holidayError);
 
-        const lastDayOfMonth = new Date(
-          today.getFullYear(),
-          today.getMonth() + 1,
-          0
-        ).getDate();
+      setIsTodayHoliday(!!holidayData);
+      setHolidayDesc(holidayData?.description ?? "");
 
-        const monthEndDate = `${today.getFullYear()}-${String(
-          today.getMonth() + 1
-        ).padStart(2, "0")}-${String(
-          lastDayOfMonth
-        ).padStart(2, "0")}`;
+      // =====================================================
+      // ABSENSI SAYA HARI INI
+      // =====================================================
 
-        const {
-          data: monthlyHolidayData,
-          error: monthlyHolidayError,
-        } = await supabase
+      const { data: myToday, error: todayError } = await supabase
+        .from("attendance")
+        .select("*")
+        .eq("profile_id", user.id)
+        .gte("created_at", todayStartIso)
+        .lt("created_at", todayEndIso)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (todayError) console.error("Today's Attendance Error:", todayError);
+
+      setTodayAttendanceId(myToday?.id ?? null);
+      setHasCheckedIn(!!myToday?.check_in);
+      setHasCheckedOut(!!myToday?.check_out);
+      setTodayStatus(myToday?.status ?? null);
+      setTodayApprovalStatus(myToday?.approval_status ?? null);
+      setTodayRejectionReason(myToday?.rejection_reason ?? null);
+      setTodayCheckIn(myToday?.check_in ?? null);
+      setTodayTaskList(
+        Array.isArray(myToday?.task_list) ? myToday.task_list : []
+      );
+
+      // =====================================================
+      // RIWAYAT BULAN BERJALAN
+      // =====================================================
+
+      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+      const { data: myHistory, error: historyError } = await supabase
+        .from("attendance")
+        .select(
+          "created_at, status, check_in, task_count, approval_status, rejection_reason"
+        )
+        .eq("profile_id", user.id)
+        .gte("created_at", monthStart.toISOString())
+        .lt("created_at", todayEndIso)
+        .order("created_at", { ascending: false });
+
+      if (historyError) console.error("History Error:", historyError);
+
+      setMyAttendanceHistory(myHistory ?? []);
+
+      // =====================================================
+      // HARI LIBUR BULAN BERJALAN (tidak dihitung alpa)
+      // =====================================================
+
+      const monthKey = todayStr.slice(0, 7);
+      const lastDay = new Date(
+        today.getFullYear(),
+        today.getMonth() + 1,
+        0
+      ).getDate();
+
+      const { data: monthlyHolidayData, error: monthlyHolidayError } =
+        await supabase
           .from("holidays")
           .select("date")
-          .gte("date", monthStartDate)
-          .lte("date", monthEndDate)
+          .gte("date", `${monthKey}-01`)
+          .lte("date", `${monthKey}-${String(lastDay).padStart(2, "0")}`)
           .eq("is_cancelled", false);
 
-        if (monthlyHolidayError) {
-          console.error(
-            "Monthly Holiday Error:",
-            monthlyHolidayError
-          );
-        }
-
-        setMonthlyHolidays(
-          (monthlyHolidayData ?? []).map(
-            (holiday) => holiday.date
-          )
-        );
-      } catch (error) {
-        console.error(
-          "Dashboard Error:",
-          error
-        );
-      } finally {
-        setLoading(false);
+      if (monthlyHolidayError) {
+        console.error("Monthly Holiday Error:", monthlyHolidayError);
       }
-    };
 
-    loadDashboard();
+      setMonthlyHolidays((monthlyHolidayData ?? []).map((h) => h.date));
+    } catch (error) {
+      console.error("Dashboard Error:", error);
+    } finally {
+      setLoading(false);
+    }
   }, [router]);
 
-  // =========================================================
-  // HUBUNGKAN STREAM CAMERA KE VIDEO
-  // =========================================================
-
   useEffect(() => {
-    if (
-      isCameraActive &&
-      videoRef.current &&
-      mediaStream
-    ) {
-      videoRef.current.srcObject =
-        mediaStream;
-    }
-  }, [isCameraActive, mediaStream]);
+    loadDashboard();
+  }, [loadDashboard]);
 
   // =========================================================
-  // LOGOUT
+  // AKSI
   // =========================================================
 
   const handleLogout = async () => {
@@ -606,182 +772,31 @@ export default function DashboardPage() {
     router.push("/login");
   };
 
-  // =========================================================
-  // START CAMERA
-  // =========================================================
-
-  const startCamera = async () => {
-    try {
-      const stream =
-        await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user",
-          },
-          audio: false,
-        });
-
-      setMediaStream(stream);
-      setIsCameraActive(true);
-
-      setPhoto(null);
-      setPhotoPreview(null);
-
-      // -----------------------------------------------------
-      // AMBIL LOKASI GPS
-      // -----------------------------------------------------
-
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            setEmployeeLocation({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude,
-            });
-          },
-          () => {
-            console.warn(
-              "GPS belum aktif/diizinkan"
-            );
-          }
-        );
-      }
-    } catch (err) {
-      console.error(err);
-
-      alert(
-        "Gagal mengakses kamera! Pastikan izin kamera telah diberikan di browser."
-      );
-    }
-  };
-
-  // =========================================================
-  // AMBIL FOTO
-  // =========================================================
-
-  const takePhoto = () => {
-    if (
-      videoRef.current &&
-      canvasRef.current
-    ) {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      const context =
-        canvas.getContext("2d");
-
-      if (context) {
-        // Mirror foto agar seperti kamera depan
-        context.translate(
-          canvas.width,
-          0
-        );
-
-        context.scale(-1, 1);
-
-        context.drawImage(
-          video,
-          0,
-          0,
-          canvas.width,
-          canvas.height
-        );
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const file = new File(
-                [blob],
-                "selfie-live.jpg",
-                {
-                  type: "image/jpeg",
-                }
-              );
-
-              setPhoto(file);
-
-              setPhotoPreview(
-                URL.createObjectURL(file)
-              );
-
-              stopCamera();
-            }
-          },
-          "image/jpeg",
-          0.8
-        );
-      }
-    }
-  };
-
-  // =========================================================
-  // STOP CAMERA
-  // =========================================================
-
-  const stopCamera = () => {
-    if (mediaStream) {
-      mediaStream
-        .getTracks()
-        .forEach((track) =>
-          track.stop()
-        );
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
-    setMediaStream(null);
-    setIsCameraActive(false);
-  };
-
-  // =========================================================
-  // ULANGI FOTO
-  // =========================================================
-
-  const retakePhoto = () => {
-    setPhoto(null);
-    setPhotoPreview(null);
-
-    startCamera();
-  };
-
-  // =========================================================
-  // HANDLER LAPORAN PEKERJAAN (TASK LIST)
-  // =========================================================
-
+  // ---- laporan pekerjaan
   const handleTaskChange = (index: number, value: string) => {
-    const updated = [...dailyTasks];
-    updated[index] = value;
-    setDailyTasks(updated);
+    setDailyTasks((prev) => prev.map((t, i) => (i === index ? value : t)));
   };
 
   const handleTaskKeyDown = (
     index: number,
     e: React.KeyboardEvent<HTMLInputElement>
   ) => {
-    // Tekan ENTER -> tambah baris baru & fokus ke baris baru
+    // Enter: tambah baris baru
     if (e.key === "Enter") {
       e.preventDefault();
 
-      if (!dailyTasks[index].trim()) {
-        return;
-      }
+      if (!dailyTasks[index].trim()) return;
 
       const updated = [...dailyTasks];
       updated.splice(index + 1, 0, "");
       setDailyTasks(updated);
 
-      setTimeout(() => {
-        taskInputRefs.current[index + 1]?.focus();
-      }, 0);
+      setTimeout(() => taskInputRefs.current[index + 1]?.focus(), 0);
 
       return;
     }
 
-    // Tekan BACKSPACE di baris kosong -> hapus baris & fokus naik
+    // Backspace di baris kosong: hapus baris
     if (
       e.key === "Backspace" &&
       dailyTasks[index] === "" &&
@@ -793,18 +808,14 @@ export default function DashboardPage() {
       updated.splice(index, 1);
       setDailyTasks(updated);
 
-      setTimeout(() => {
-        taskInputRefs.current[index - 1]?.focus();
-      }, 0);
+      setTimeout(() => taskInputRefs.current[index - 1]?.focus(), 0);
     }
   };
 
   const handleAddTaskRow = () => {
     setDailyTasks((prev) => [...prev, ""]);
 
-    setTimeout(() => {
-      taskInputRefs.current[dailyTasks.length]?.focus();
-    }, 0);
+    setTimeout(() => taskInputRefs.current[dailyTasks.length]?.focus(), 0);
   };
 
   const handleRemoveTaskRow = (index: number) => {
@@ -816,615 +827,164 @@ export default function DashboardPage() {
     setDailyTasks((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const filledTaskCount = dailyTasks.filter(
-    (t) => t.trim().length > 0
-  ).length;
+  const filledTaskCount = dailyTasks.filter((t) => t.trim()).length;
 
-  // =========================================================
-  // SUBMIT ABSENSI
-  // =========================================================
+  // ---- upload foto ke storage, kembalikan URL publik
+  const uploadPhoto = async (file: File, type: "check_in" | "check_out") => {
+    const ext = file.name ? file.name.split(".").pop() : "jpg";
+    const fileName = `${userId}-${type}-${Date.now()}.${ext}`;
 
-  const submitAttendance = async (
-    type: "check_in" | "check_out"
-  ) => {
+    const { error: uploadError } = await supabase.storage
+      .from("attendances")
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from("attendances").getPublicUrl(fileName);
+
+    return data.publicUrl;
+  };
+
+  // ---- submit absensi
+  const submitAttendance = async (type: "check_in" | "check_out") => {
+    if (isTakingAttendance) return;
+
     setIsTakingAttendance(true);
 
     try {
-      const now =
-        new Date().toISOString();
+      const now = new Date();
+      const nowIso = now.toISOString();
 
-      const currentHour =
-        new Date().getHours();
-
-      // =====================================================
-      // CHECK IN
-      // =====================================================
-
+      // ---------------- CHECK IN ----------------
       if (type === "check_in") {
-        // ---------------------------------------------------
-        // SAKIT / IZIN
-        // ---------------------------------------------------
+        if (hasCheckedIn) {
+          setNotice({ type: "error", text: "Kamu sudah absen hari ini." });
+          return;
+        }
 
-        if (
-          attendanceTab === "sakit" ||
-          attendanceTab === "izin"
-        ) {
-          if (!reasonText.trim()) {
-            alert(
-              `Keterangan ${attendanceTab} tidak boleh kosong!`
-            );
+        // Sakit / izin
+        if (attendanceTab === "sakit" || attendanceTab === "izin") {
+          const reason = reasonText.trim();
 
-            setIsTakingAttendance(false);
-
+          if (!reason) {
+            setNotice({
+              type: "error",
+              text: `Keterangan ${attendanceTab} tidak boleh kosong.`,
+            });
             return;
           }
 
-          const { error } =
-            await supabase
-              .from("attendance")
-              .insert({
-                profile_id: userId,
-                status: attendanceTab,
-                reason: reasonText,
-                check_in: now,
-                approval_status: "pending",
-              })
-              .select()
-              .single();
+          const { error } = await supabase.from("attendance").insert({
+            profile_id: userId,
+            status: attendanceTab,
+            reason,
+            check_in: nowIso,
+            approval_status: "pending",
+          });
 
-          if (error) {
-            throw error;
-          }
+          if (error) throw error;
 
-          alert(
-            `✅ Berhasil mengirim pengajuan ${attendanceTab}! Semoga hari Anda lancar.`
-          );
+          resetCapture();
+          setNotice({
+            type: "success",
+            text: `Pengajuan ${attendanceTab} berhasil dikirim.`,
+          });
 
-          window.location.reload();
+          await loadDashboard();
 
           return;
         }
 
-        // ---------------------------------------------------
-        // HADIR
-        // ---------------------------------------------------
-
-        if (
-          !photo ||
-          !employeeLocation
-        ) {
-          alert(
-            "Foto dan Lokasi GPS wajib ada sebelum absen!"
-          );
-
-          setIsTakingAttendance(false);
-
+        // Hadir
+        if (!photo || !employeeLocation) {
+          setNotice({
+            type: "error",
+            text: "Foto dan lokasi GPS wajib ada sebelum absen.",
+          });
           return;
         }
 
-        // ---------------------------------------------------
-        // UPLOAD FOTO
-        // ---------------------------------------------------
+        const photoUrl = await uploadPhoto(photo, "check_in");
 
-        const fileExt = photo.name
-          ? photo.name.split(".").pop()
-          : "jpg";
+        const { error } = await supabase.from("attendance").insert({
+          profile_id: userId,
+          status: now.getHours() >= LATE_HOUR ? "late" : "present",
+          check_in: nowIso,
+          photo_check_in: photoUrl,
+          approval_status: "pending",
+          latitude: employeeLocation.lat,
+          longitude: employeeLocation.lng,
+        });
 
-        const fileName = `${userId}-${type}-${Date.now()}.${fileExt}`;
+        if (error) throw error;
 
-        const {
-          error: uploadError,
-        } = await supabase.storage
-          .from("attendances")
-          .upload(
-            fileName,
-            photo
-          );
+        resetCapture();
+        setNotice({ type: "success", text: "Berhasil absen masuk." });
 
-        if (uploadError) {
-          alert(
-            `❌ Gagal Upload Foto: ${uploadError.message}`
-          );
-
-          setIsTakingAttendance(false);
-
-          return;
-        }
-
-        // ---------------------------------------------------
-        // PUBLIC URL FOTO
-        // ---------------------------------------------------
-
-        const {
-          data: publicUrlData,
-        } = supabase.storage
-          .from("attendances")
-          .getPublicUrl(
-            fileName
-          );
-
-        // ---------------------------------------------------
-        // STATUS ABSEN
-        // Sebelum jam 09 = present
-        // Jam 09 ke atas = late
-        // ---------------------------------------------------
-
-        const attStatus =
-          currentHour >= 9
-            ? "late"
-            : "present";
-
-        // ---------------------------------------------------
-        // SIMPAN ABSENSI
-        // ---------------------------------------------------
-
-        const { error } =
-          await supabase
-            .from("attendance")
-            .insert({
-              profile_id: userId,
-              status: attStatus,
-              check_in: now,
-              photo_check_in:
-                publicUrlData.publicUrl,
-              approval_status:
-                "pending",
-              latitude:
-                employeeLocation.lat,
-              longitude:
-                employeeLocation.lng,
-            })
-            .select()
-            .single();
-
-        if (error) {
-          throw error;
-        }
-
-        alert(
-          "✅ Berhasil Check-In!"
-        );
-
-        window.location.reload();
+        await loadDashboard();
 
         return;
       }
 
-      // =====================================================
-      // CHECK OUT
-      // =====================================================
-
-      if (
-        !photo ||
-        !employeeLocation
-      ) {
-        alert(
-          "Foto dan Lokasi GPS wajib ada sebelum absen pulang!"
-        );
-
-        setIsTakingAttendance(false);
-
+      // ---------------- CHECK OUT ----------------
+      if (!photo || !employeeLocation) {
+        setNotice({
+          type: "error",
+          text: "Foto dan lokasi GPS wajib ada sebelum absen pulang.",
+        });
         return;
       }
 
       if (!todayAttendanceId) {
-        alert(
-          "❌ ID Absensi hari ini tidak ditemukan"
-        );
-
-        setIsTakingAttendance(false);
-
+        setNotice({
+          type: "error",
+          text: "Data absensi hari ini tidak ditemukan.",
+        });
         return;
       }
-
-      // -----------------------------------------------------
-      // VALIDASI LAPORAN PEKERJAAN
-      // Buang baris kosong, wajib minimal 1 pekerjaan terisi
-      // -----------------------------------------------------
 
       const filteredTasks = dailyTasks
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
       if (filteredTasks.length === 0) {
-        alert(
-          "Mohon isi minimal 1 pekerjaan yang telah kamu kerjakan hari ini sebelum absen pulang!"
-        );
-
-        setIsTakingAttendance(false);
-
+        setNotice({
+          type: "error",
+          text: "Isi minimal 1 pekerjaan yang kamu kerjakan hari ini sebelum absen pulang.",
+        });
         return;
       }
 
-      // -----------------------------------------------------
-      // UPLOAD FOTO CHECK OUT
-      // -----------------------------------------------------
+      const photoUrl = await uploadPhoto(photo, "check_out");
 
-      const fileExt = photo.name
-        ? photo.name.split(".").pop()
-        : "jpg";
+      const { error } = await supabase
+        .from("attendance")
+        .update({
+          check_out: nowIso,
+          photo_check_out: photoUrl,
+          latitude_out: employeeLocation.lat,
+          longitude_out: employeeLocation.lng,
+          task_list: filteredTasks,
+          task_count: filteredTasks.length,
+        })
+        .eq("id", todayAttendanceId);
 
-      const fileName = `${userId}-${type}-${Date.now()}.${fileExt}`;
+      if (error) throw error;
 
-      const {
-        error: uploadError,
-      } = await supabase.storage
-        .from("attendances")
-        .upload(
-          fileName,
-          photo
-        );
+      resetCapture();
+      setNotice({ type: "success", text: "Berhasil absen pulang." });
 
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      // -----------------------------------------------------
-      // PUBLIC URL FOTO
-      // -----------------------------------------------------
-
-      const {
-        data: publicUrlData,
-      } = supabase.storage
-        .from("attendances")
-        .getPublicUrl(
-          fileName
-        );
-
-      // -----------------------------------------------------
-      // UPDATE ABSENSI
-      // FIX: sertakan task_list & task_count dari laporan
-      // pekerjaan yang diisi karyawan.
-      // -----------------------------------------------------
-
-      const { error } =
-        await supabase
-          .from("attendance")
-          .update({
-            check_out: now,
-            photo_check_out:
-              publicUrlData.publicUrl,
-            latitude_out:
-              employeeLocation.lat,
-            longitude_out:
-              employeeLocation.lng,
-            task_list: filteredTasks,
-            task_count: filteredTasks.length,
-          })
-          .eq(
-            "id",
-            todayAttendanceId
-          );
-
-      if (error) {
-        throw error;
-      }
-
-      alert(
-        "✅ Berhasil Check-Out!"
-      );
-
-      window.location.reload();
+      await loadDashboard();
     } catch (error: any) {
-      console.error(
-        "Catch Error:",
-        error
-      );
+      console.error("Catch Error:", error);
 
-      alert(
-        `❌ Error Sistem: ${
-          error.message ||
-          JSON.stringify(error)
-        }`
-      );
+      setNotice({
+        type: "error",
+        text: `Gagal: ${error?.message || JSON.stringify(error)}`,
+      });
+    } finally {
+      setIsTakingAttendance(false);
     }
-
-    setIsTakingAttendance(false);
-  };
-
-  // =========================================================
-  // STATISTIK BULAN BERJALAN
-  // =========================================================
-
-  let myPresentCount = 0;
-  let myLateCount = 0;
-  let mySickCount = 0;
-  let myLeaveCount = 0;
-  let myRejectedCount = 0;
-
-  // Hitung status absensi.
-  //
-  // PENTING:
-  // Jika approval_status = rejected, record tersebut TIDAK BOLEH
-  // masuk ke Present maupun Late. Record rejected hanya dihitung
-  // sebagai ALPA / TIDAK MASUK.
-  myAttendanceHistory.forEach((att) => {
-    if (att.approval_status === "rejected") {
-      myRejectedCount++;
-      return;
-    }
-
-    if (att.status === "present") {
-      myPresentCount++;
-    }
-
-    if (att.status === "late") {
-      myLateCount++;
-    }
-
-    if (att.status === "sakit") {
-      mySickCount++;
-    }
-
-    if (att.status === "izin") {
-      myLeaveCount++;
-    }
-  });
-
-  // =========================================================
-  // HITUNG ALPA OTOMATIS
-  //
-  // Alpa = hari kerja yang:
-  // 1. Sudah lewat
-  // 2. Sudah termasuk masa user aktif/dibuat
-  // 3. Bukan Sabtu/Minggu
-  // 4. Bukan hari libur
-  // 5. Tidak mempunyai record attendance
-  //
-  // Hari ini TIDAK langsung dihitung Alpa agar karyawan masih
-  // mempunyai kesempatan untuk melakukan absensi hari ini.
-  // =========================================================
-
-  const attendanceDateSet = new Set(
-    myAttendanceHistory
-      .map((att) => {
-        if (!att.created_at) {
-          return null;
-        }
-
-        const date = new Date(att.created_at);
-
-        return `${date.getFullYear()}-${String(
-          date.getMonth() + 1
-        ).padStart(2, "0")}-${String(
-          date.getDate()
-        ).padStart(2, "0")}`;
-      })
-      .filter(Boolean)
-  );
-
-  const nowForStats = new Date();
-
-  const currentMonthStart = new Date(
-    nowForStats.getFullYear(),
-    nowForStats.getMonth(),
-    1,
-    0,
-    0,
-    0,
-    0
-  );
-
-  const userCreatedDate = profileCreatedAt
-    ? new Date(profileCreatedAt)
-    : currentMonthStart;
-
-  const userCreatedDay = new Date(
-    userCreatedDate.getFullYear(),
-    userCreatedDate.getMonth(),
-    userCreatedDate.getDate(),
-    0,
-    0,
-    0,
-    0
-  );
-
-  // Jika user dibuat sebelum bulan berjalan, mulai dari tanggal 1.
-  // Jika user dibuat di bulan berjalan, mulai dari tanggal user dibuat.
-  const absenceStartDate =
-    userCreatedDay > currentMonthStart
-      ? userCreatedDay
-      : currentMonthStart;
-
-  // Kemarin adalah tanggal terakhir yang boleh dihitung Alpa.
-  const yesterday = new Date(
-    nowForStats.getFullYear(),
-    nowForStats.getMonth(),
-    nowForStats.getDate() - 1,
-    0,
-    0,
-    0,
-    0
-  );
-
-  // Absensi yang ditolak langsung dihitung sebagai Alpa.
-  let myAbsentCount = myRejectedCount;
-
-  const checkDate = new Date(absenceStartDate);
-
-  while (checkDate <= yesterday) {
-    const dayOfWeek = checkDate.getDay();
-
-    const isWeekend =
-      dayOfWeek === 0 ||
-      dayOfWeek === 6;
-
-    const dateString = `${checkDate.getFullYear()}-${String(
-      checkDate.getMonth() + 1
-    ).padStart(2, "0")}-${String(
-      checkDate.getDate()
-    ).padStart(2, "0")}`;
-
-    const isHoliday =
-      monthlyHolidays.includes(dateString);
-
-    const hasAttendance =
-      attendanceDateSet.has(dateString);
-
-    if (
-      !isWeekend &&
-      !isHoliday &&
-      !hasAttendance
-    ) {
-      myAbsentCount++;
-    }
-
-    checkDate.setDate(
-      checkDate.getDate() + 1
-    );
-  }
-
-  // Total masuk hanya berasal dari absensi yang tidak ditolak.
-  const myTotalMasuk =
-    myPresentCount +
-    myLateCount;
-
-  // =========================================================
-  // DATA GRAFIK JAM MASUK
-  // =========================================================
-
-  const chartData =
-    myAttendanceHistory
-      .filter(
-        (item) =>
-          item.check_in &&
-          item.approval_status !== "rejected" &&
-          (
-            item.status ===
-              "present" ||
-            item.status ===
-              "late"
-          )
-      )
-      .map((item) => {
-        const dateObj =
-          new Date(
-            item.check_in
-          );
-
-        const hours =
-          dateObj.getHours() +
-          dateObj.getMinutes() /
-            60;
-
-        return {
-          tanggal:
-            dateObj.toLocaleDateString(
-              "id-ID",
-              {
-                day: "numeric",
-                month: "short",
-              }
-            ),
-
-          jamDesimal:
-            parseFloat(
-              hours.toFixed(2)
-            ),
-
-          waktuAsli:
-            dateObj.toLocaleTimeString(
-              "id-ID",
-              {
-                hour: "2-digit",
-                minute: "2-digit",
-              }
-            ),
-
-          status:
-            item.status,
-        };
-      })
-      .reverse();
-
-  // =========================================================
-  // DATA GRAFIK PRODUKTIVITAS HARIAN (JUMLAH TASK)
-  // =========================================================
-
-  const productivityData = myAttendanceHistory
-    .filter(
-      (item) =>
-        item.check_in &&
-        item.approval_status !== "rejected" &&
-        typeof item.task_count === "number" &&
-        item.task_count > 0
-    )
-    .map((item) => {
-      const dateObj = new Date(item.check_in);
-
-      return {
-        tanggal: dateObj.toLocaleDateString("id-ID", {
-          day: "numeric",
-          month: "short",
-        }),
-        jumlahTugas: item.task_count,
-      };
-    })
-    .reverse();
-
-  // =========================================================
-  // CUSTOM TOOLTIP GRAFIK JAM MASUK
-  // =========================================================
-
-  const CustomTooltip = ({
-    active,
-    payload,
-    label,
-  }: any) => {
-    if (
-      active &&
-      payload &&
-      payload.length
-    ) {
-      return (
-        <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-lg">
-          <p className="font-bold text-gray-800">
-            {label}
-          </p>
-
-          <p className="text-sm font-semibold text-blue-600">
-            Jam Masuk:{" "}
-            {
-              payload[0].payload
-                .waktuAsli
-            }
-          </p>
-
-          <p className="mt-1 text-xs text-gray-500 capitalize">
-            Status:{" "}
-            {
-              payload[0].payload
-                .status
-            }
-          </p>
-        </div>
-      );
-    }
-
-    return null;
-  };
-
-  // =========================================================
-  // CUSTOM TOOLTIP GRAFIK PRODUKTIVITAS
-  // =========================================================
-
-  const ProductivityTooltip = ({
-    active,
-    payload,
-    label,
-  }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-lg">
-          <p className="font-bold text-gray-800">{label}</p>
-          <p className="text-sm font-semibold text-emerald-600">
-            {payload[0].payload.jumlahTugas} pekerjaan
-          </p>
-        </div>
-      );
-    }
-
-    return null;
   };
 
   // =========================================================
@@ -1433,27 +993,188 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f5f7fb]">
-        <div className="mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6">
-          <div className="flex flex-col items-center gap-5">
-            <div className="relative h-16 w-16">
-              <div className="absolute inset-0 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
-              <div className="absolute inset-3 rounded-full bg-white shadow-sm" />
-            </div>
-            <div className="text-center">
-              <p className="text-sm font-black tracking-wide text-slate-800">Menyiapkan dashboard</p>
-              <p className="mt-1 text-xs text-slate-400">Memuat data absensi kamu...</p>
-            </div>
-          </div>
+      <div
+        className={`${BASE} flex min-h-screen items-center justify-center bg-[#F2F4F9]`}
+      >
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-slate-200 border-t-[#0E1A3A]" />
+          <p className="text-sm font-medium text-slate-500">
+            Memuat dasbor...
+          </p>
         </div>
       </div>
     );
   }
 
   // =========================================================
-  // STATUS ABSENSI SELESAI
+  // DATA TURUNAN: ADMIN / TIM
   // =========================================================
 
+  const isAdmin = userRole === "admin";
+
+  const teamHadir = companyPresentCount + companyLateCount;
+  const teamSudahAbsen = Math.max(
+    companyEmployeeCount - companyMissing.length,
+    0
+  );
+  const teamDataMasuk = teamHadir + companySickCount + companyLeaveCount;
+
+  const teamRate =
+    companyEmployeeCount > 0
+      ? Math.round((teamHadir / companyEmployeeCount) * 100)
+      : 0;
+
+  const teamDonut = [
+    { name: "Tepat waktu", value: companyPresentCount, color: STATUS.present.color },
+    { name: "Terlambat", value: companyLateCount, color: STATUS.late.color },
+    { name: "Sakit", value: companySickCount, color: STATUS.sakit.color },
+    { name: "Izin", value: companyLeaveCount, color: STATUS.izin.color },
+    { name: "Belum absen", value: companyMissing.length, color: STATUS.absent.color },
+  ];
+
+  const teamDonutTotal = teamDonut.reduce((sum, item) => sum + item.value, 0);
+  const teamStripTotal = Math.max(companyEmployeeCount, teamDonutTotal, 1);
+
+  const teamDonutRender =
+    teamDonutTotal > 0
+      ? teamDonut
+      : [{ name: "Kosong", value: 1, color: "#E8ECF3" }];
+
+  const hasTrendData = companyTrend.some(
+    (d) => d.present + d.late + d.sakit + d.izin > 0
+  );
+
+  // =========================================================
+  // DATA TURUNAN: STATISTIK SAYA BULAN INI
+  // =========================================================
+
+  let myPresentCount = 0;
+  let myLateCount = 0;
+  let mySickCount = 0;
+  let myLeaveCount = 0;
+  let myRejectedCount = 0;
+
+  // Absensi yang ditolak tidak dihitung hadir/terlambat, hanya alpa
+  myAttendanceHistory.forEach((att) => {
+    if (att.approval_status === "rejected") {
+      myRejectedCount++;
+      return;
+    }
+
+    if (att.status === "present") myPresentCount++;
+    if (att.status === "late") myLateCount++;
+    if (att.status === "sakit") mySickCount++;
+    if (att.status === "izin") myLeaveCount++;
+  });
+
+  // Alpa = hari kerja yang sudah lewat, sejak akun dibuat, bukan
+  // Sabtu/Minggu, bukan hari libur, dan tanpa catatan absensi.
+  // Hari ini belum dihitung agar masih bisa absen.
+  const attendanceDateSet = new Set(
+    myAttendanceHistory
+      .map((att) => (att.created_at ? toDateKey(new Date(att.created_at)) : null))
+      .filter(Boolean)
+  );
+
+  const nowForStats = new Date();
+
+  const currentMonthStart = new Date(
+    nowForStats.getFullYear(),
+    nowForStats.getMonth(),
+    1
+  );
+
+  const createdDay = profileCreatedAt
+    ? new Date(
+        new Date(profileCreatedAt).getFullYear(),
+        new Date(profileCreatedAt).getMonth(),
+        new Date(profileCreatedAt).getDate()
+      )
+    : currentMonthStart;
+
+  const absenceStartDate =
+    createdDay > currentMonthStart ? createdDay : currentMonthStart;
+
+  const yesterday = new Date(
+    nowForStats.getFullYear(),
+    nowForStats.getMonth(),
+    nowForStats.getDate() - 1
+  );
+
+  let myAbsentCount = myRejectedCount;
+
+  const checkDate = new Date(absenceStartDate);
+
+  while (checkDate <= yesterday) {
+    const day = checkDate.getDay();
+    const key = toDateKey(checkDate);
+
+    if (
+      day !== 0 &&
+      day !== 6 &&
+      !monthlyHolidays.includes(key) &&
+      !attendanceDateSet.has(key)
+    ) {
+      myAbsentCount++;
+    }
+
+    checkDate.setDate(checkDate.getDate() + 1);
+  }
+
+  const myTotalMasuk = myPresentCount + myLateCount;
+
+  const myComposition: { key: StatusKey; label: string; value: number }[] = [
+    { key: "present", label: "Tepat waktu", value: myPresentCount },
+    { key: "late", label: "Terlambat", value: myLateCount },
+    { key: "sakit", label: "Sakit", value: mySickCount },
+    { key: "izin", label: "Izin", value: myLeaveCount },
+    { key: "absent", label: "Alpa / ditolak", value: myAbsentCount },
+  ];
+
+  const myCompositionTotal = myComposition.reduce((s, i) => s + i.value, 0);
+
+  // ---- grafik jam masuk
+  const chartData = myAttendanceHistory
+    .filter(
+      (item) =>
+        item.check_in &&
+        item.approval_status !== "rejected" &&
+        (item.status === "present" || item.status === "late")
+    )
+    .map((item) => {
+      const d = new Date(item.check_in);
+
+      return {
+        tanggal: d.toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "short",
+        }),
+        jamDesimal: parseFloat((d.getHours() + d.getMinutes() / 60).toFixed(2)),
+        waktuAsli: fmtTime(item.check_in),
+        status: item.status,
+      };
+    })
+    .reverse();
+
+  // ---- grafik produktivitas
+  const productivityData = myAttendanceHistory
+    .filter(
+      (item) =>
+        item.check_in &&
+        item.approval_status !== "rejected" &&
+        typeof item.task_count === "number" &&
+        item.task_count > 0
+    )
+    .map((item) => ({
+      tanggal: new Date(item.check_in).toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+      }),
+      jumlahTugas: item.task_count,
+    }))
+    .reverse();
+
+  // ---- status absensi saya
   const isAttendanceDone =
     hasCheckedOut ||
     todayStatus === "sakit" ||
@@ -1461,409 +1182,674 @@ export default function DashboardPage() {
     todayApprovalStatus === "rejected";
 
   const statusLabel =
-    todayStatus === "late"
-      ? "Terlambat"
-      : todayStatus === "present"
-        ? "Hadir"
-        : todayStatus === "sakit"
-          ? "Sakit"
-          : todayStatus === "izin"
-            ? "Izin"
-            : todayApprovalStatus === "rejected"
-              ? "Tidak Masuk (Ditolak)"
-              : "Belum Absen";
+    todayApprovalStatus === "rejected"
+      ? "Ditolak"
+      : STATUS[todayStatus as StatusKey]?.label || "Belum absen";
 
-  const todayTime = myAttendanceHistory[0]?.check_in
-    ? new Date(myAttendanceHistory[0].check_in).toLocaleTimeString("id-ID", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : null;
+  const statusBadge =
+    todayApprovalStatus === "rejected"
+      ? STATUS.absent.badge
+      : STATUS[todayStatus as StatusKey]?.badge ||
+        "bg-slate-100 text-slate-600 ring-slate-200";
 
-  const StatCard = ({
-    label,
-    value,
-    caption,
-    tone,
-    icon,
-  }: {
-    label: string;
-    value: number;
-    caption: string;
-    tone: "blue" | "green" | "orange" | "purple" | "red";
-    icon: string;
-  }) => {
-    const tones = {
-      blue: "bg-blue-50 text-blue-600 ring-blue-100",
-      green: "bg-emerald-50 text-emerald-600 ring-emerald-100",
-      orange: "bg-orange-50 text-orange-600 ring-orange-100",
-      purple: "bg-violet-50 text-violet-600 ring-violet-100",
-      red: "bg-red-50 text-red-600 ring-red-100",
-    };
+  // ---- teks umum
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 11
+      ? "Selamat pagi"
+      : hour < 15
+      ? "Selamat siang"
+      : hour < 18
+      ? "Selamat sore"
+      : "Selamat malam";
 
-    return (
-      <div className="group relative overflow-hidden rounded-[26px] border border-slate-200/70 bg-white p-5 shadow-[0_12px_40px_-24px_rgba(15,23,42,0.28)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_45px_-25px_rgba(15,23,42,0.35)]">
-        <div className="absolute -right-8 -top-8 h-20 w-20 rounded-full bg-slate-50 transition-transform duration-500 group-hover:scale-150" />
-        <div className="relative flex items-start justify-between">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</p>
-            <p className="mt-2 text-3xl font-black tracking-tight text-slate-900">
-              {value}
-              <span className="ml-1 text-xs font-bold text-slate-400">{caption}</span>
-            </p>
-          </div>
-          <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ring-1 ${tones[tone]}`}>
-            <span className="text-lg">{icon}</span>
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const todayLabel = new Date().toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  const monthLabel = new Date().toLocaleDateString("id-ID", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const firstName = userName.split(" ")[0];
+
+  const summary = !isAdmin
+    ? isAttendanceDone
+      ? "Absensi kamu hari ini sudah selesai."
+      : "Jangan lupa lakukan absensi hari ini."
+    : companyEmployeeCount === 0
+    ? "Belum ada anggota yang terdaftar di perusahaan ini."
+    : companyMissing.length === 0
+    ? `Semua ${companyEmployeeCount} anggota sudah absen hari ini.`
+    : `${teamSudahAbsen} dari ${companyEmployeeCount} anggota sudah absen. ${companyMissing.length} lainnya belum.`;
+
+  const roleLabel = isAdmin ? "Admin" : "Employee";
 
   // =========================================================
-  // DASHBOARD KARYAWAN
+  // RENDER
   // =========================================================
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f5f7fb] pb-14 text-slate-900">
-      {/* Background decoration */}
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-200/30 blur-3xl" />
-        <div className="absolute -right-32 top-1/3 h-96 w-96 rounded-full bg-indigo-200/25 blur-3xl" />
-      </div>
+    <main className={`${BASE} min-h-screen bg-[#F2F4F9] pb-16 text-slate-800`}>
+      {/* ================= TOAST ================= */}
 
-      {/* =====================================================
-          HEADER
-      ===================================================== */}
-      <header className="sticky top-0 z-40 border-b border-white/60 bg-white/75 backdrop-blur-2xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 sm:px-6 lg:px-8">
+      {notice && (
+        <div
+          role="status"
+          className={`fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 max-w-[90vw] -translate-x-1/2 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-lg ${
+            notice.type === "success" ? "bg-emerald-600" : "bg-rose-600"
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
+
+      {/* ================= HEADER ================= */}
+
+      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-8">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-lg font-black text-white shadow-lg shadow-blue-500/25">
-              {companyName.slice(0, 1).toUpperCase()}
-            </div>
+            <BrandLogo name={companyName} />
+
             <div className="min-w-0">
-              <h1 className="truncate text-sm font-black tracking-tight text-slate-900 sm:text-base">
+              <h1
+                className={`${D} truncate text-lg font-semibold leading-tight text-slate-900`}
+              >
                 {companyName}
               </h1>
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-                Employee Portal
+              <p className="text-xs text-slate-500">
+                {isAdmin ? "Dasbor admin" : "Dasbor karyawan"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden text-right sm:block">
-              <p className="max-w-40 truncate text-sm font-extrabold capitalize text-slate-800">
+          <div className="flex shrink-0 items-center gap-3">
+            <div className="hidden items-center gap-2.5 sm:flex">
+              <span className="max-w-[10rem] truncate text-sm font-semibold capitalize text-slate-700">
                 {userName}
-              </p>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">
-                ● Admin
-              </p>
+              </span>
+
+              <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-700 ring-1 ring-inset ring-sky-200">
+                {roleLabel}
+              </span>
             </div>
+
             <button
               onClick={handleLogout}
-              className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-extrabold text-slate-600 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 sm:px-4"
+              className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
             >
-              Keluar
+              Logout
             </button>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl space-y-6 px-4 pt-6 sm:px-6 sm:pt-8 lg:px-8">
-        {/* ===================================================
-            HERO
-        =================================================== */}
-        <section className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-[#0f172a] via-[#172554] to-[#1d4ed8] p-6 text-white shadow-[0_25px_70px_-30px_rgba(30,64,175,0.55)] sm:p-8">
-          <div className="absolute -right-20 -top-24 h-72 w-72 rounded-full bg-blue-400/20 blur-2xl" />
-          <div className="absolute -bottom-24 left-1/3 h-60 w-60 rounded-full bg-indigo-400/20 blur-3xl" />
-          <div className="absolute right-7 top-7 hidden h-20 w-20 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl sm:block" />
+      <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-8 sm:pt-8">
+        {/* ================= HERO ================= */}
 
-          <div className="relative z-10 grid gap-7 md:grid-cols-[1fr_auto] md:items-center">
+        <section className="rounded-[28px] bg-[#0E1A3A] p-6 text-white sm:p-10">
+          <div
+            className={`grid items-center gap-8 ${
+              isAdmin ? "lg:grid-cols-[1fr_auto]" : ""
+            }`}
+          >
             <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-blue-100 backdrop-blur-md">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
-                Sistem Absensi Aktif
-              </div>
-              <p className="text-sm font-medium text-blue-100">Selamat datang kembali,</p>
-              <h2 className="mt-1 max-w-xl text-3xl font-black tracking-tight sm:text-4xl">
-                {userName}
-                <span className="text-blue-300">.</span>
-              </h2>
-              <p className="mt-3 max-w-lg text-sm leading-6 text-blue-100/75">
-                Pantau absensi perusahaan, lihat laporan harian tim, dan tetap lakukan absensi kamu seperti karyawan dalam satu dashboard.
-              </p>
-            </div>
+              <p className="text-sm capitalize text-slate-300">{todayLabel}</p>
 
-            <div className="min-w-[190px] rounded-[24px] border border-white/10 bg-white/10 p-4 backdrop-blur-xl">
-              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-200">Hari ini</p>
-              <p className="mt-2 text-lg font-extrabold capitalize">
-                {new Date().toLocaleDateString("id-ID", {
-                  weekday: "long",
-                  day: "numeric",
-                  month: "long",
-                })}
+              <h2
+                className={`${D} mt-2 text-3xl font-semibold capitalize leading-tight sm:text-5xl`}
+              >
+                {greeting}, {firstName}.
+              </h2>
+
+              <p className="mt-4 max-w-md text-[15px] leading-relaxed text-slate-300">
+                {summary}
               </p>
-              <div className="mt-3 flex items-center gap-2">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
-                    isAttendanceDone
-                      ? "bg-emerald-400/15 text-emerald-200"
-                      : "bg-amber-400/15 text-amber-200"
-                  }`}
-                >
-                  {isAttendanceDone ? "ABSENSI SELESAI" : "BELUM SELESAI"}
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-100">
+                  Absensi kamu:{" "}
+                  {isTodayHoliday
+                    ? "hari libur"
+                    : `${statusLabel.toLowerCase()}${
+                        todayCheckIn ? `, ${fmtTime(todayCheckIn)}` : ""
+                      }`}
                 </span>
               </div>
-            </div>
-          </div>
-        </section>
 
-        {/* ===================================================
-            ADMIN — COMPANY OVERVIEW
-        =================================================== */}
-        {userRole === "admin" && (
-          <>
-            <section className="space-y-4">
-              <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600">Company monitoring</p>
-                  <h2 className="mt-1 text-xl font-black tracking-tight text-slate-900">Ringkasan Kehadiran Tim</h2>
-                  <p className="mt-1 text-xs text-slate-400">Data absensi perusahaan hari ini.</p>
-                </div>
-                <Link href="/attendance" className="w-fit rounded-xl bg-blue-50 px-4 py-2 text-[10px] font-black text-blue-600 transition hover:bg-blue-100">
-                  Lihat semua absensi →
-                </Link>
-              </div>
+              {isAdmin && (
+                <div className="mt-7 flex flex-wrap gap-3">
+                  <Link
+                    href="/attendance"
+                    className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-[#0E1A3A] transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  >
+                    Kelola absensi
+                  </Link>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-                <StatCard label="Total Anggota" value={companyEmployeeCount} caption="Orang" tone="blue" icon="👥" />
-                <StatCard label="Tepat Waktu" value={companyPresentCount} caption="Orang" tone="green" icon="✓" />
-                <StatCard label="Terlambat" value={companyLateCount} caption="Orang" tone="orange" icon="◷" />
-                <StatCard label="Sakit" value={companySickCount} caption="Orang" tone="orange" icon="🤒" />
-                <StatCard label="Izin" value={companyLeaveCount} caption="Orang" tone="purple" icon="📝" />
-                <StatCard label="Belum Absen" value={companyMissingCount} caption="Orang" tone="red" icon="!" />
-              </div>
-            </section>
+                  <Link
+                    href="/employees"
+                    className="rounded-xl border border-white/25 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  >
+                    Direktori karyawan
+                  </Link>
 
-            <section className="grid gap-5 lg:grid-cols-[0.8fr_1.7fr]">
-              <div className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)] sm:p-7">
-                <div className="mb-4">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-indigo-600">Today overview</p>
-                  <h3 className="mt-1 text-lg font-black text-slate-900">Komposisi Kehadiran</h3>
-                </div>
-
-                {companyEmployeeCount > 0 ? (
-                  <div className="flex items-center justify-center">
-                    <div className="relative h-56 w-56">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={[
-                              { name: "Tepat Waktu", value: companyPresentCount, color: "#10b981" },
-                              { name: "Terlambat", value: companyLateCount, color: "#f59e0b" },
-                              { name: "Sakit", value: companySickCount, color: "#f97316" },
-                              { name: "Izin", value: companyLeaveCount, color: "#8b5cf6" },
-                              { name: "Belum Absen", value: companyMissingCount, color: "#ef4444" },
-                            ]}
-                            innerRadius={68}
-                            outerRadius={92}
-                            paddingAngle={4}
-                            dataKey="value"
-                            stroke="none"
-                          >
-                            {[
-                              { color: "#10b981" },
-                              { color: "#f59e0b" },
-                              { color: "#f97316" },
-                              { color: "#8b5cf6" },
-                              { color: "#ef4444" },
-                            ].map((entry, index) => (
-                              <Cell key={index} fill={entry.color} />
-                            ))}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-3xl font-black text-slate-900">{companyTodayAttendance.length}</span>
-                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">Data Masuk</span>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex h-56 items-center justify-center rounded-2xl bg-slate-50 text-xs font-bold text-slate-400">Belum ada data anggota.</div>
-                )}
-
-                <div className="mt-5 grid grid-cols-2 gap-2">
-                  {[
-                    ["Tepat Waktu", companyPresentCount, "bg-emerald-50 text-emerald-600"],
-                    ["Terlambat", companyLateCount, "bg-amber-50 text-amber-600"],
-                    ["Sakit", companySickCount, "bg-orange-50 text-orange-600"],
-                    ["Izin", companyLeaveCount, "bg-violet-50 text-violet-600"],
-                    ["Belum Absen", companyMissingCount, "bg-red-50 text-red-600"],
-                  ].map(([label, value, classes]) => (
-                    <div key={String(label)} className={`flex items-center justify-between rounded-xl px-3 py-2 text-[10px] font-black ${classes}`}>
-                      <span>{label}</span><span>{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="min-w-0 rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)] sm:p-7">
-                <div className="mb-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-                  <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Company analytics</p>
-                    <h3 className="mt-1 text-lg font-black text-slate-900">Tren Kehadiran Tim</h3>
-                    <p className="mt-1 text-xs text-slate-400">Jumlah karyawan hadir dan terlambat selama 7 hari terakhir.</p>
-                  </div>
-                  <span className="w-fit rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-600">7 HARI</span>
-                </div>
-
-                {companyTrendData.length > 0 ? (
-                  <div className="h-72 w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={companyTrendData} margin={{ top: 10, right: 8, left: -18, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#eef2f7" />
-                        <XAxis dataKey="tanggal" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} dy={10} />
-                        <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: "#94a3b8" }} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="hadir" name="Hadir" stroke="#2563eb" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#2563eb" }} />
-                        <Line type="monotone" dataKey="terlambat" name="Terlambat" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#f59e0b" }} />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="flex h-72 items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 text-center text-xs font-bold text-slate-400">Belum ada data grafik.</div>
-                )}
-              </div>
-            </section>
-
-          </>
-        )}
-
-        {/* ===================================================
-            ABSENSI HARI INI
-        =================================================== */}
-        <section className="overflow-hidden rounded-[30px] border border-slate-200/70 bg-white shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)]">
-          <div className="border-b border-slate-100 px-5 py-5 sm:px-7">
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2 w-2 rounded-full bg-blue-600" />
-                  <h2 className="text-lg font-black tracking-tight text-slate-900">Absensi Hari Ini</h2>
-                </div>
-                <p className="mt-1 text-xs text-slate-400">
-                  Verifikasi kehadiran menggunakan foto langsung dan lokasi GPS.
-                </p>
-              </div>
-
-              {todayStatus && (
-                <div
-                  className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-black ${
-                    todayApprovalStatus === "rejected"
-                      ? "bg-red-50 text-red-600"
-                      : todayStatus === "present"
-                        ? "bg-emerald-50 text-emerald-600"
-                        : todayStatus === "late"
-                          ? "bg-amber-50 text-amber-600"
-                          : todayStatus === "sakit"
-                            ? "bg-orange-50 text-orange-600"
-                            : "bg-violet-50 text-violet-600"
-                  }`}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                  {statusLabel}
-                  {todayTime && ` • ${todayTime}`}
+                  <Link
+                    href="/rekap"
+                    className="rounded-xl border border-white/25 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+                  >
+                    Rekap bulanan
+                  </Link>
                 </div>
               )}
             </div>
+
+            {/* GAUGE KEHADIRAN TIM */}
+
+            {isAdmin && (
+              <div className="relative mx-auto h-52 w-52 shrink-0 sm:h-56 sm:w-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadialBarChart
+                    data={[{ name: "Hadir", value: teamRate }]}
+                    innerRadius="80%"
+                    outerRadius="100%"
+                    startAngle={90}
+                    endAngle={-270}
+                  >
+                    <PolarAngleAxis
+                      type="number"
+                      domain={[0, 100]}
+                      tick={false}
+                      angleAxisId={0}
+                    />
+                    <RadialBar
+                      dataKey="value"
+                      cornerRadius={50}
+                      fill="#5EEAD4"
+                      background={{ fill: "rgba(255,255,255,0.12)" }}
+                    />
+                  </RadialBarChart>
+                </ResponsiveContainer>
+
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <span className={`${D} text-5xl font-semibold`}>
+                    {teamRate}
+                    <span className="text-2xl text-slate-400">%</span>
+                  </span>
+                  <span className="mt-1 text-xs text-slate-300">
+                    tim hadir hari ini
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* =====================================================
+            MONITORING TIM (ADMIN)
+        ===================================================== */}
+
+        {isAdmin && (
+          <>
+            {/* RINGKASAN ANGKA */}
+
+            <section className={`${card} mt-6`}>
+              <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                {teamDonut.map(
+                  (seg) =>
+                    seg.value > 0 && (
+                      <div
+                        key={seg.name}
+                        title={`${seg.name}: ${seg.value}`}
+                        style={{
+                          width: `${(seg.value / teamStripTotal) * 100}%`,
+                          backgroundColor: seg.color,
+                        }}
+                      />
+                    )
+                )}
+              </div>
+
+              <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-6 lg:gap-x-0 lg:divide-x lg:divide-slate-100">
+                <div className="lg:pr-5">
+                  <dt className="flex items-center gap-2 text-sm text-slate-500">
+                    <span className="h-2.5 w-2.5 rounded-full bg-slate-800" />
+                    Total anggota
+                  </dt>
+                  <dd
+                    className={`${D} mt-1 text-4xl font-semibold text-slate-900`}
+                  >
+                    {companyEmployeeCount}
+                  </dd>
+                </div>
+
+                {teamDonut.map((item) => (
+                  <div key={item.name} className="lg:px-5">
+                    <dt className="flex items-center gap-2 text-sm text-slate-500">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      {item.name}
+                    </dt>
+                    <dd
+                      className={`${D} mt-1 text-4xl font-semibold text-slate-900`}
+                    >
+                      {item.value}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+
+            {/* GRAFIK TIM */}
+
+            <div className="mt-6 grid gap-6 lg:grid-cols-5">
+              <section className={`${card} lg:col-span-3`}>
+                <h3 className={`${D} text-xl font-semibold text-slate-900`}>
+                  Kehadiran tim 7 hari terakhir
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Jumlah anggota per status, termasuk hari ini.
+                </p>
+
+                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+                  {SERIES.map((key) => (
+                    <span
+                      key={key}
+                      className="flex items-center gap-2 text-xs font-medium text-slate-600"
+                    >
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={{ backgroundColor: STATUS[key].color }}
+                      />
+                      {STATUS[key].label}
+                    </span>
+                  ))}
+                </div>
+
+                {hasTrendData ? (
+                  <div className="mt-4 h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={companyTrend}
+                        margin={{ top: 8, right: 4, left: -20, bottom: 0 }}
+                      >
+                        <CartesianGrid
+                          vertical={false}
+                          stroke="#EEF1F6"
+                          strokeDasharray="4 4"
+                        />
+                        <XAxis
+                          dataKey="label"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 12, fill: "#64748B" }}
+                        />
+                        <YAxis
+                          allowDecimals={false}
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 12, fill: "#94A3B8" }}
+                        />
+                        <Tooltip
+                          content={<WeekTooltip />}
+                          cursor={{ fill: "rgba(14,26,58,0.05)" }}
+                        />
+                        {SERIES.map((key, i) => (
+                          <Bar
+                            key={key}
+                            dataKey={key}
+                            stackId="week"
+                            fill={STATUS[key].color}
+                            maxBarSize={30}
+                            radius={
+                              (i === SERIES.length - 1
+                                ? [8, 8, 0, 0]
+                                : 0) as any
+                            }
+                          />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <div className="mt-4 flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
+                    Belum ada data absensi dalam 7 hari terakhir.
+                  </div>
+                )}
+              </section>
+
+              <section className={`${card} lg:col-span-2`}>
+                <h3 className={`${D} text-xl font-semibold text-slate-900`}>
+                  Status hari ini
+                </h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Proporsi seluruh anggota berdasarkan status.
+                </p>
+
+                <div className="relative mx-auto mt-4 h-44 w-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={teamDonutRender}
+                        innerRadius={56}
+                        outerRadius={80}
+                        paddingAngle={teamDonutTotal > 0 ? 4 : 0}
+                        cornerRadius={6}
+                        dataKey="value"
+                        stroke="none"
+                      >
+                        {teamDonutRender.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+
+                      {teamDonutTotal > 0 && (
+                        <Tooltip
+                          formatter={(value) => [`${value} anggota`, "Jumlah"]}
+                          contentStyle={{
+                            borderRadius: "12px",
+                            border: "1px solid #E2E8F0",
+                            fontSize: "12px",
+                          }}
+                        />
+                      )}
+                    </PieChart>
+                  </ResponsiveContainer>
+
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span
+                      className={`${D} text-3xl font-semibold text-slate-900`}
+                    >
+                      {teamDataMasuk}
+                    </span>
+                    <span className="text-xs text-slate-500">data masuk</span>
+                  </div>
+                </div>
+
+                <ul className="mt-5 space-y-2.5">
+                  {teamDonut.map((item) => {
+                    const pct =
+                      companyEmployeeCount > 0
+                        ? Math.round((item.value / companyEmployeeCount) * 100)
+                        : 0;
+
+                    return (
+                      <li
+                        key={item.name}
+                        className="flex items-center justify-between text-sm"
+                      >
+                        <span className="flex items-center gap-2.5 text-slate-600">
+                          <span
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          {item.name}
+                        </span>
+
+                        <span className="font-semibold text-slate-900">
+                          {item.value}
+                          <span className="ml-1.5 text-xs font-medium text-slate-400">
+                            {pct}%
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            </div>
+
+            {/* LAPORAN TIM & BELUM ABSEN */}
+
+            <div className="mt-6 grid items-start gap-6 lg:grid-cols-3">
+              <section className={`${card} lg:col-span-2`}>
+                <div className="mb-5 flex items-center justify-between gap-4">
+                  <div>
+                    <h3
+                      className={`${D} text-xl font-semibold text-slate-900`}
+                    >
+                      Laporan pekerjaan tim
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Dilaporkan anggota saat absen pulang hari ini.
+                    </p>
+                  </div>
+
+                  <Link
+                    href="/attendance"
+                    className="shrink-0 rounded-full bg-slate-100 px-4 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+                  >
+                    Lihat semua
+                  </Link>
+                </div>
+
+                {companyReports.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                    Belum ada laporan pekerjaan hari ini.
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {companyReports.map((report) => (
+                      <li
+                        key={report.id}
+                        className="py-4 first:pt-0 last:pb-0"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="min-w-0 truncate text-[15px] font-semibold text-slate-900">
+                            {report.name}
+                          </p>
+
+                          <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                            {report.tasks.length} pekerjaan
+                          </span>
+                        </div>
+
+                        <ol className="mt-2 space-y-1.5">
+                          {report.tasks.slice(0, 3).map((task: string, i: number) => (
+                            <li
+                              key={i}
+                              className="flex items-start gap-2.5 text-sm text-slate-600"
+                            >
+                              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold text-slate-500">
+                                {i + 1}
+                              </span>
+                              <span className="min-w-0 break-words">{task}</span>
+                            </li>
+                          ))}
+                        </ol>
+
+                        {report.tasks.length > 3 && (
+                          <p className="mt-1.5 pl-7 text-xs text-slate-400">
+                            +{report.tasks.length - 3} pekerjaan lainnya
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section className={card}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3
+                      className={`${D} text-xl font-semibold text-slate-900`}
+                    >
+                      Belum absen
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {companyMissing.length} anggota perlu diingatkan.
+                    </p>
+                  </div>
+
+                  <Link
+                    href="/rekap-tidak-hadir"
+                    className="shrink-0 rounded-full bg-rose-50 px-3.5 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-100"
+                  >
+                    Rekap alpa
+                  </Link>
+                </div>
+
+                <div className="mt-5 max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {companyMissing.length === 0 ? (
+                    <div className="flex flex-col items-center rounded-xl bg-emerald-50 p-6 text-center text-emerald-700">
+                      <Icon d={ICONS.check} className="h-6 w-6" />
+                      <p className="mt-2 text-sm font-semibold">
+                        Semua anggota sudah absen
+                      </p>
+                    </div>
+                  ) : (
+                    companyMissing.map((employee) => (
+                      <div
+                        key={employee.id}
+                        className="flex items-center gap-3 rounded-xl bg-slate-50 px-3.5 py-2.5"
+                      >
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-bold text-rose-600">
+                          {employee.full_name?.charAt(0).toUpperCase() || "?"}
+                        </div>
+
+                        <span className="truncate text-sm font-medium text-slate-700">
+                          {employee.full_name}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+            </div>
+          </>
+        )}
+
+        {/* =====================================================
+            ABSENSI SAYA
+        ===================================================== */}
+
+        <section className="mt-10">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2
+                className={`${D} text-2xl font-semibold text-slate-900 sm:text-3xl`}
+              >
+                Absensi saya
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Verifikasi kehadiran dengan foto langsung dan lokasi GPS.
+              </p>
+            </div>
+
+            {todayStatus && (
+              <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset ${statusBadge}`}>
+                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                {statusLabel}
+                {todayCheckIn && `, ${fmtTime(todayCheckIn)}`}
+              </span>
+            )}
           </div>
 
-          <div className="p-5 sm:p-7">
+          <div className="rounded-2xl border border-slate-200/70 bg-white p-5 sm:p-8">
             {isTodayHoliday ? (
-              <div className="relative overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50 p-8 text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm">🏖️</div>
-                <h3 className="text-2xl font-black text-slate-900">Hari Ini Libur</h3>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{holidayDesc}</p>
-                <span className="mt-5 inline-flex rounded-full bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-blue-600 shadow-sm">
-                  Form Absensi Dinonaktifkan
+              /* ---------- HARI LIBUR ---------- */
+              <div className="rounded-2xl bg-slate-50 p-8 text-center">
+                <h3 className={`${D} text-2xl font-semibold text-slate-900`}>
+                  Hari ini libur
+                </h3>
+                <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">
+                  {holidayDesc}
+                </p>
+                <span className="mt-5 inline-flex rounded-full bg-white px-4 py-2 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">
+                  Form absensi dinonaktifkan
                 </span>
               </div>
             ) : hasCheckedIn && isAttendanceDone ? (
+              /* ---------- ABSENSI SELESAI ---------- */
               <div
-                className={`relative overflow-hidden rounded-[26px] border p-7 ${
+                className={`rounded-2xl p-6 sm:p-8 ${
                   todayApprovalStatus === "rejected"
-                    ? "border-red-100 bg-gradient-to-br from-red-50 to-rose-50"
+                    ? "bg-rose-50"
                     : todayStatus === "sakit"
-                      ? "border-orange-100 bg-gradient-to-br from-orange-50 to-amber-50"
-                      : todayStatus === "izin"
-                        ? "border-violet-100 bg-gradient-to-br from-violet-50 to-purple-50"
-                        : "border-emerald-100 bg-gradient-to-br from-emerald-50 to-teal-50"
+                    ? "bg-orange-50"
+                    : todayStatus === "izin"
+                    ? "bg-violet-50"
+                    : "bg-emerald-50"
                 }`}
               >
                 <div className="flex flex-col items-center text-center">
-                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white text-3xl shadow-sm">
-                    {todayApprovalStatus === "rejected"
-                      ? "✕"
-                      : todayStatus === "sakit"
-                        ? "🤒"
+                  <div
+                    className={`mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white ${
+                      todayApprovalStatus === "rejected"
+                        ? "text-rose-600"
+                        : todayStatus === "sakit"
+                        ? "text-orange-600"
                         : todayStatus === "izin"
-                          ? "📝"
-                          : "✓"}
+                        ? "text-violet-600"
+                        : "text-emerald-600"
+                    }`}
+                  >
+                    <Icon
+                      d={
+                        todayApprovalStatus === "rejected"
+                          ? ICONS.close
+                          : ICONS.check
+                      }
+                      className="h-6 w-6"
+                    />
                   </div>
-                  <h3 className="text-xl font-black text-slate-900">
+
+                  <h3
+                    className={`${D} text-2xl font-semibold text-slate-900`}
+                  >
                     {todayApprovalStatus === "rejected"
-                      ? "Absensi Ditolak — Dianggap Tidak Masuk"
+                      ? "Absensi ditolak, dianggap tidak masuk"
                       : todayStatus === "sakit"
-                        ? "Semoga lekas sembuh!"
-                        : todayStatus === "izin"
-                          ? "Pengajuan Izin Tercatat"
-                          : "Absensi hari ini selesai!"}
+                      ? "Semoga lekas sembuh"
+                      : todayStatus === "izin"
+                      ? "Pengajuan izin tercatat"
+                      : "Absensi hari ini selesai"}
                   </h3>
-                  <p className="mt-2 max-w-lg text-sm leading-6 text-slate-500">
+
+                  <p className="mt-2 max-w-lg text-sm leading-relaxed text-slate-600">
                     {todayApprovalStatus === "rejected"
-                      ? "Pengajuan/absensi kamu telah ditolak oleh Admin/Owner sehingga hari ini dihitung sebagai tidak masuk (Alpa)."
+                      ? "Absensi kamu ditolak oleh owner sehingga hari ini dihitung sebagai tidak masuk (alpa)."
                       : todayStatus === "sakit" || todayStatus === "izin"
-                        ? `Data ketidakhadiran dengan alasan ${todayStatus} telah terkirim dan menunggu proses HRD.`
-                        : "Terima kasih sudah menyelesaikan absensi. Semoga harimu berjalan dengan lancar!"}
+                      ? `Pengajuan ${todayStatus} sudah terkirim dan menunggu diproses.`
+                      : "Terima kasih sudah menyelesaikan absensi. Semoga harimu lancar."}
                   </p>
 
                   {todayApprovalStatus === "rejected" && (
-                    <div className="mx-auto mt-5 w-full max-w-lg rounded-2xl border border-red-200 bg-white/80 p-4 text-left shadow-sm">
-                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-red-500">
-                        Alasan Penolakan
+                    <div className="mt-5 w-full max-w-lg rounded-xl bg-white p-4 text-left">
+                      <p className="text-xs font-semibold text-rose-500">
+                        Alasan penolakan
                       </p>
-                      <p className="mt-2 text-sm font-semibold leading-6 text-red-700">
-                        {todayRejectionReason || "Tidak ada alasan yang diberikan."}
+                      <p className="mt-1.5 text-sm leading-relaxed text-slate-700">
+                        {todayRejectionReason ||
+                          "Tidak ada alasan yang diberikan."}
                       </p>
-                      <div className="mt-3 rounded-xl bg-red-50 px-3 py-2.5 text-[11px] font-bold text-red-600">
-                        Status akhir hari ini: <span className="font-black">ALPA / TIDAK MASUK</span>
-                      </div>
                     </div>
                   )}
                 </div>
 
-                {/* -----------------------------------------------
-                    LAPORAN PEKERJAAN HARI INI (READ ONLY)
-                    Hanya tampil untuk status present/late yang
-                    sudah punya task_list tersimpan.
-                ----------------------------------------------- */}
                 {(todayStatus === "present" || todayStatus === "late") &&
                   todayTaskList.length > 0 && (
-                    <div className="mx-auto mt-6 max-w-lg rounded-[22px] border border-white/70 bg-white/70 p-5 text-left backdrop-blur-sm">
-                      <p className="mb-3 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                    <div className="mx-auto mt-6 max-w-lg rounded-xl bg-white p-5 text-left">
+                      <p className="mb-3 text-sm font-semibold text-slate-700">
                         Laporan pekerjaan hari ini ({todayTaskList.length})
                       </p>
+
                       <ol className="space-y-2">
                         {todayTaskList.map((task, i) => (
                           <li
                             key={i}
-                            className="flex items-start gap-2 text-sm text-slate-700"
+                            className="flex items-start gap-2.5 text-sm text-slate-700"
                           >
-                            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700">
+                            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-[11px] font-semibold text-emerald-700">
                               {i + 1}
                             </span>
-                            <span>{task}</span>
+                            <span className="min-w-0 break-words">{task}</span>
                           </li>
                         ))}
                       </ol>
@@ -1871,24 +1857,31 @@ export default function DashboardPage() {
                   )}
               </div>
             ) : (
+              /* ---------- FORM ABSENSI ---------- */
               <div>
                 {!hasCheckedIn && (
-                  <div className="mx-auto mb-6 grid w-full max-w-lg grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1.5">
-                    {[
-                      { id: "hadir" as const, label: "Hadir", icon: "🏢", active: "text-blue-600" },
-                      { id: "sakit" as const, label: "Sakit", icon: "🤒", active: "text-orange-600" },
-                      { id: "izin" as const, label: "Izin", icon: "📝", active: "text-violet-600" },
-                    ].map((tab) => (
+                  <div
+                    role="group"
+                    aria-label="Jenis absensi"
+                    className="mx-auto mb-6 grid w-full max-w-lg grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1"
+                  >
+                    {(
+                      [
+                        { id: "hadir", label: "Hadir" },
+                        { id: "sakit", label: "Sakit" },
+                        { id: "izin", label: "Izin" },
+                      ] as const
+                    ).map((tab) => (
                       <button
                         key={tab.id}
                         onClick={() => setAttendanceTab(tab.id)}
-                        className={`rounded-xl px-2 py-3 text-xs font-black transition-all ${
+                        aria-pressed={attendanceTab === tab.id}
+                        className={`h-10 rounded-lg text-sm font-semibold transition ${
                           attendanceTab === tab.id
-                            ? `bg-white ${tab.active} shadow-sm`
-                            : "text-slate-400 hover:text-slate-700"
+                            ? "bg-white text-[#0E1A3A] shadow-sm"
+                            : "text-slate-500 hover:text-slate-800"
                         }`}
                       >
-                        <span className="mr-1">{tab.icon}</span>
                         {tab.label}
                       </button>
                     ))}
@@ -1896,62 +1889,69 @@ export default function DashboardPage() {
                 )}
 
                 {!hasCheckedIn && attendanceTab !== "hadir" ? (
-                  <div className="mx-auto max-w-lg rounded-[26px] border border-slate-200 bg-slate-50/80 p-5 sm:p-6">
-                    <div className="mb-5 flex items-start gap-3">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm">
-                        {attendanceTab === "sakit" ? "🤒" : "📝"}
-                      </div>
-                      <div>
-                        <h3 className="font-black text-slate-900">
-                          Pengajuan {attendanceTab === "sakit" ? "Sakit" : "Izin"}
-                        </h3>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          Jelaskan alasan dengan singkat dan jelas agar mudah diproses.
-                        </p>
-                      </div>
-                    </div>
+                  /* ----- sakit / izin ----- */
+                  <div className="mx-auto max-w-lg">
+                    <h3 className="text-base font-semibold text-slate-900">
+                      Pengajuan {attendanceTab === "sakit" ? "sakit" : "izin"}
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Jelaskan alasan dengan singkat dan jelas agar mudah
+                      diproses.
+                    </p>
 
+                    <label htmlFor="reason" className="sr-only">
+                      Alasan
+                    </label>
                     <textarea
+                      id="reason"
                       value={reasonText}
                       onChange={(e) => setReasonText(e.target.value)}
-                      placeholder={`Tuliskan alasan kenapa Anda ${attendanceTab} hari ini...`}
-                      className="min-h-32 w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                      placeholder={`Tuliskan alasan kenapa kamu ${attendanceTab} hari ini...`}
                       rows={4}
+                      className="mt-4 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-base text-slate-700 placeholder:text-slate-400 focus:border-[#0E1A3A] focus:outline-none focus:ring-2 focus:ring-[#0E1A3A]/15 sm:text-sm"
                     />
 
                     <button
                       onClick={() => submitAttendance("check_in")}
                       disabled={isTakingAttendance || !reasonText.trim()}
-                      className={`mt-4 w-full rounded-2xl py-3.5 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40 ${
-                        attendanceTab === "sakit"
-                          ? "bg-gradient-to-r from-orange-500 to-amber-500 shadow-orange-500/20"
-                          : "bg-gradient-to-r from-violet-600 to-purple-600 shadow-violet-500/20"
-                      }`}
+                      className={`${btnPrimary} mt-4`}
                     >
-                      {isTakingAttendance ? "Memproses..." : `Kirim Pengajuan ${attendanceTab === "sakit" ? "Sakit" : "Izin"}`}
+                      {isTakingAttendance
+                        ? "Memproses..."
+                        : `Kirim pengajuan ${
+                            attendanceTab === "sakit" ? "sakit" : "izin"
+                          }`}
                     </button>
                   </div>
                 ) : (
                   <>
-                    {/* CAMERA */}
+                    {/* ----- kamera ----- */}
                     <div className="mx-auto w-full max-w-md">
-                      <div className="relative aspect-[4/3] overflow-hidden rounded-[30px] border-4 border-white bg-slate-950 shadow-[0_20px_60px_-25px_rgba(15,23,42,0.5)] ring-1 ring-slate-200">
+                      <div className="relative aspect-[4/3] overflow-hidden rounded-2xl border border-slate-200 bg-slate-950">
                         <canvas ref={canvasRef} className="hidden" />
 
                         {photoPreview ? (
                           <div className="relative h-full w-full">
-                            <img src={photoPreview} alt="Preview" className="h-full w-full object-cover" />
-                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5 pt-14">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={photoPreview}
+                              alt="Pratinjau foto absensi"
+                              className="h-full w-full object-cover"
+                            />
+
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 pt-12">
                               <button
                                 onClick={retakePhoto}
-                                className="mx-auto flex items-center gap-2 rounded-full border border-white/20 bg-white/90 px-5 py-2.5 text-xs font-black text-slate-800 shadow-xl backdrop-blur-md transition hover:scale-105"
+                                className="mx-auto flex h-10 items-center gap-2 rounded-full bg-white/95 px-5 text-xs font-semibold text-slate-800 transition hover:bg-white"
                               >
-                                🔄 Ambil Ulang Foto
+                                <Icon d={ICONS.retake} />
+                                Ambil ulang foto
                               </button>
                             </div>
-                            <div className="absolute left-4 top-4 rounded-full border border-white/20 bg-black/35 px-3 py-1.5 text-[10px] font-black text-white backdrop-blur-md">
-                              ✓ FOTO TERVERIFIKASI
-                            </div>
+
+                            <span className="absolute left-3 top-3 rounded-full bg-black/45 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+                              Foto siap dikirim
+                            </span>
                           </div>
                         ) : isCameraActive ? (
                           <div className="relative h-full w-full bg-black">
@@ -1962,126 +1962,163 @@ export default function DashboardPage() {
                               muted
                               className="h-full w-full scale-x-[-1] object-cover"
                             />
+
                             <div className="pointer-events-none absolute inset-0">
-                              <div className="absolute inset-6 rounded-[28px] border border-white/25" />
-                              <div className="absolute left-1/2 top-1/2 h-56 w-44 -translate-x-1/2 -translate-y-1/2 rounded-[45%] border-2 border-white/30" />
-                              <div className="absolute left-1/2 top-1/2 h-px w-44 -translate-x-1/2 bg-white/20" />
+                              <div className="absolute left-1/2 top-1/2 h-[70%] w-[46%] -translate-x-1/2 -translate-y-1/2 rounded-[45%] border-2 border-white/35" />
                             </div>
-                            <div className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1.5 text-[10px] font-black text-white backdrop-blur-md">
-                              ● LIVE CAMERA
-                            </div>
+
+                            <span className="absolute left-3 top-3 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+                              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-400" />
+                              Kamera aktif
+                            </span>
+
                             <button
                               onClick={takePhoto}
-                              className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border-4 border-white/80 bg-white px-6 py-3 text-xs font-black text-blue-700 shadow-2xl transition hover:scale-105"
+                              className="absolute bottom-4 left-1/2 flex h-11 -translate-x-1/2 items-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-[#0E1A3A] shadow-lg transition hover:bg-slate-100"
                             >
-                              <span className="text-base">📸</span> AMBIL FOTO
+                              <Icon d={ICONS.camera} />
+                              Ambil foto
                             </button>
                           </div>
                         ) : (
-                          <div className="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 p-7 text-center">
-                            <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-[24px] bg-white text-3xl shadow-sm ring-1 ring-blue-100">
-                              📷
+                          <div className="flex h-full w-full flex-col items-center justify-center bg-slate-50 p-6 text-center">
+                            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-white text-slate-500 ring-1 ring-slate-200">
+                              <Icon d={ICONS.camera} className="h-6 w-6" />
                             </div>
-                            <h3 className="text-lg font-black text-slate-900">Verifikasi Wajah</h3>
-                            <p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">
-                              Ambil foto secara langsung. Upload dari galeri dinonaktifkan untuk menjaga validitas absensi.
+
+                            <h3
+                              className={`${D} text-lg font-semibold text-slate-900`}
+                            >
+                              Verifikasi wajah
+                            </h3>
+
+                            <p className="mt-1.5 max-w-xs text-xs leading-relaxed text-slate-500">
+                              Ambil foto secara langsung. Unggah dari galeri
+                              dinonaktifkan untuk menjaga validitas absensi.
                             </p>
+
                             <button
                               onClick={startCamera}
-                              className="mt-5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-xs font-black text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 hover:shadow-xl"
+                              className="mt-4 h-10 rounded-xl bg-[#0E1A3A] px-5 text-xs font-semibold text-white transition hover:bg-[#1a2a5a]"
                             >
-                              Aktifkan Kamera
+                              Aktifkan kamera
                             </button>
                           </div>
                         )}
                       </div>
 
-                      <div className="mt-4 flex justify-center">
-                        {employeeLocation ? (
-                          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2 text-[10px] font-black text-emerald-600">
-                            <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]" />
-                            GPS TERVERIFIKASI
-                          </div>
+                      {/* GPS */}
+
+                      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                        {gpsStatus === "ok" ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                            <Icon d={ICONS.pin} className="h-3.5 w-3.5" />
+                            Lokasi GPS terverifikasi
+                          </span>
+                        ) : gpsStatus === "loading" ? (
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3.5 py-1.5 text-xs font-semibold text-slate-500">
+                            <Icon d={ICONS.pin} className="h-3.5 w-3.5" />
+                            Mencari lokasi...
+                          </span>
                         ) : (
-                          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-[10px] font-bold text-slate-400">
-                            📍 Izinkan akses lokasi GPS
-                          </div>
+                          <>
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3.5 py-1.5 text-xs font-semibold text-slate-500">
+                              <Icon d={ICONS.pin} className="h-3.5 w-3.5" />
+                              {gpsStatus === "denied"
+                                ? "Lokasi belum diizinkan"
+                                : "Izinkan akses lokasi GPS"}
+                            </span>
+
+                            <button
+                              onClick={requestLocation}
+                              className="h-8 rounded-full border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                            >
+                              {gpsStatus === "denied" ? "Coba lagi" : "Aktifkan"}
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
 
-                    {/* -----------------------------------------------
-                        LAPORAN PEKERJAAN (TASK LIST)
-                        Hanya muncul saat karyawan akan ABSEN PULANG,
-                        bukan saat absen masuk.
-                    ----------------------------------------------- */}
-                    {hasCheckedIn && !hasCheckedOut && (
-                      <div className="mx-auto mt-6 w-full max-w-md rounded-[26px] border border-slate-200 bg-slate-50/80 p-5 sm:p-6">
-                        <div className="mb-4 flex items-start gap-3">
-                          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm">
-                            📝
-                          </div>
-                          <div>
-                            <h3 className="font-black text-slate-900">Laporan Pekerjaan Hari Ini</h3>
-                            <p className="mt-1 text-xs leading-5 text-slate-400">
-                              Tulis pekerjaan yang sudah kamu selesaikan. Tekan{" "}
-                              <span className="font-bold text-slate-500">Enter</span> untuk menambah baris baru.
-                            </p>
-                          </div>
-                        </div>
+                    {/* ----- laporan pekerjaan (saat absen pulang) ----- */}
 
-                        <div className="space-y-2">
+                    {hasCheckedIn && !hasCheckedOut && (
+                      <div className="mx-auto mt-6 w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50/70 p-5 sm:p-6">
+                        <h3 className="text-base font-semibold text-slate-900">
+                          Laporan pekerjaan hari ini
+                        </h3>
+                        <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                          Tulis pekerjaan yang sudah kamu selesaikan. Tekan
+                          Enter untuk menambah baris baru.
+                        </p>
+
+                        <div className="mt-4 space-y-2">
                           {dailyTasks.map((task, index) => (
                             <div key={index} className="flex items-center gap-2">
-                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-xs font-black text-blue-600">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
                                 {index + 1}
                               </span>
+
                               <input
                                 ref={(el) => {
                                   taskInputRefs.current[index] = el;
                                 }}
                                 type="text"
                                 value={task}
-                                onChange={(e) => handleTaskChange(index, e.target.value)}
+                                onChange={(e) =>
+                                  handleTaskChange(index, e.target.value)
+                                }
                                 onKeyDown={(e) => handleTaskKeyDown(index, e)}
-                                placeholder={`Pekerjaan ke-${index + 1}...`}
-                                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-300 focus:border-blue-400 focus:ring-4 focus:ring-blue-50"
+                                placeholder={`Pekerjaan ke-${index + 1}`}
+                                aria-label={`Pekerjaan ke-${index + 1}`}
+                                className={inputCls}
                               />
+
                               {dailyTasks.length > 1 && (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveTaskRow(index)}
-                                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-slate-300 transition hover:bg-red-50 hover:text-red-500"
+                                  aria-label={`Hapus pekerjaan ke-${index + 1}`}
+                                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
                                 >
-                                  ✕
+                                  <Icon d={ICONS.close} />
                                 </button>
                               )}
                             </div>
                           ))}
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={handleAddTaskRow}
-                          className="mt-3 flex items-center gap-1.5 text-xs font-black text-blue-600 transition hover:text-blue-700"
-                        >
-                          + Tambah Pekerjaan
-                        </button>
+                        <div className="mt-3 flex items-center justify-between">
+                          <button
+                            type="button"
+                            onClick={handleAddTaskRow}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-[#0E1A3A] transition hover:bg-slate-100"
+                          >
+                            <Icon d={ICONS.plus} />
+                            Tambah pekerjaan
+                          </button>
 
-                        <p className="mt-3 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          Total: {filledTaskCount} pekerjaan tercatat
-                        </p>
+                          <span className="text-xs text-slate-500">
+                            {filledTaskCount} tercatat
+                          </span>
+                        </div>
                       </div>
                     )}
+
+                    {/* ----- tombol kirim ----- */}
 
                     <div className="mx-auto mt-6 flex max-w-md flex-col gap-3">
                       {!hasCheckedIn && (
                         <button
                           onClick={() => submitAttendance("check_in")}
-                          disabled={isTakingAttendance || !photo || !employeeLocation}
-                          className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-4 text-sm font-black text-white shadow-lg shadow-blue-500/20 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40"
+                          disabled={
+                            isTakingAttendance || !photo || !employeeLocation
+                          }
+                          className={btnPrimary}
                         >
-                          {isTakingAttendance ? "Memproses..." : "✓ Kirim Absen Masuk"}
+                          {isTakingAttendance
+                            ? "Memproses..."
+                            : "Kirim absen masuk"}
                         </button>
                       )}
 
@@ -2094,24 +2131,31 @@ export default function DashboardPage() {
                             !employeeLocation ||
                             filledTaskCount === 0
                           }
-                          className="rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-8 py-4 text-sm font-black text-white shadow-lg shadow-orange-500/20 transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-40"
+                          className={btnPrimary}
                         >
-                          {isTakingAttendance ? "Memproses..." : "↗ Kirim Absen Pulang"}
+                          {isTakingAttendance
+                            ? "Memproses..."
+                            : "Kirim absen pulang"}
                         </button>
                       )}
                     </div>
 
-                    {!photo && (
-                      <p className="mt-3 text-center text-[10px] font-semibold text-slate-400">
-                        Foto dan GPS wajib tersedia sebelum tombol absensi aktif.
+                    {(!photo || !employeeLocation) && (
+                      <p className="mt-3 text-center text-xs text-slate-500">
+                        Foto dan GPS wajib tersedia sebelum tombol absensi
+                        aktif.
                       </p>
                     )}
 
-                    {hasCheckedIn && !hasCheckedOut && photo && filledTaskCount === 0 && (
-                      <p className="mt-2 text-center text-[10px] font-semibold text-amber-500">
-                        Isi minimal 1 laporan pekerjaan sebelum absen pulang.
-                      </p>
-                    )}
+                    {hasCheckedIn &&
+                      !hasCheckedOut &&
+                      photo &&
+                      employeeLocation &&
+                      filledTaskCount === 0 && (
+                        <p className="mt-2 text-center text-xs font-medium text-amber-600">
+                          Isi minimal 1 laporan pekerjaan sebelum absen pulang.
+                        </p>
+                      )}
                   </>
                 )}
               </div>
@@ -2119,252 +2163,248 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {userRole === "admin" && (
-          <section className="grid gap-3 sm:grid-cols-3">
-            <Link href="/attendance" className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
-              <p className="text-sm font-black text-slate-900">👥 Kelola Absensi</p>
-              <p className="mt-1 text-[11px] text-slate-400">Approve dan lihat absensi tim.</p>
-            </Link>
-            <Link href="/employees" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
-              <p className="text-sm font-black text-slate-900">🧑‍💼 Employees</p>
-              <p className="mt-1 text-[11px] text-slate-400">Lihat direktori anggota perusahaan.</p>
-            </Link>
-            <Link href="/rekap" className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
-              <p className="text-sm font-black text-slate-900">📊 Rekap Bulanan</p>
-              <p className="mt-1 text-[11px] text-slate-400">Buka laporan rekap kehadiran.</p>
-            </Link>
-          </section>
-        )}
+        {/* =====================================================
+            RINGKASAN SAYA BULAN INI
+        ===================================================== */}
 
-        {/* ===================================================
-            QUICK LINK
-        =================================================== */}
-        <Link
-          href="/my-attendance"
-          className="group flex items-center justify-between overflow-hidden rounded-[26px] border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 px-5 py-4 transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-lg hover:shadow-blue-500/10 sm:px-6"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-lg shadow-sm">📅</div>
+        <section className="mt-10">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-sm font-black text-slate-900">Riwayat Absensi</p>
-              <p className="text-[11px] text-slate-400">Lihat seluruh rekam kehadiran kamu</p>
-            </div>
-          </div>
-          <span className="text-lg font-black text-blue-600 transition-transform group-hover:translate-x-1">→</span>
-        </Link>
-
-        {/* ===================================================
-            STATISTIK
-        =================================================== */}
-        <section>
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Performance</p>
-              <h2 className="mt-1 text-xl font-black tracking-tight text-slate-900">Ringkasan Kehadiran</h2>
-            </div>
-            <span className="hidden text-[10px] font-bold text-slate-400 sm:block">
-              {new Date().toLocaleDateString("id-ID", {
-                month: "long",
-                year: "numeric",
-              })}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
-            <StatCard label="Total Masuk" value={myTotalMasuk} caption="Hari" tone="blue" icon="↗" />
-            <StatCard label="Tepat Waktu" value={myPresentCount} caption="Hari" tone="green" icon="✓" />
-            <StatCard label="Terlambat" value={myLateCount} caption="Hari" tone="orange" icon="◷" />
-            <StatCard label="Alpa / Ditolak" value={myAbsentCount} caption="Hari" tone="red" icon="!" />
-          </div>
-        </section>
-
-        {/* ===================================================
-            DETAIL + CHART
-        =================================================== */}
-        <section className="grid gap-5 lg:grid-cols-[0.8fr_1.7fr]">
-          <div className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)] sm:p-7">
-            <div className="mb-6">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Attendance rate</p>
-              <h3 className="mt-1 text-lg font-black text-slate-900">Detail Statistik</h3>
-              <p className="mt-1 text-xs font-semibold text-blue-600">
-                {new Date().toLocaleDateString("id-ID", {
-                  month: "long",
-                  year: "numeric",
-                })}
+              <h2
+                className={`${D} text-2xl font-semibold text-slate-900 sm:text-3xl`}
+              >
+                Ringkasan saya
+              </h2>
+              <p className="mt-1 text-sm capitalize text-slate-500">
+                {monthLabel}
               </p>
             </div>
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-2xl bg-emerald-50/70 p-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">✓</span>
-                  <div>
-                    <p className="text-xs font-black text-slate-800">Tepat Waktu</p>
-                    <p className="text-[10px] text-slate-400">Sebelum pukul 09:00</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-black text-emerald-600">{myPresentCount}</p>
-              </div>
-
-              <div className="flex items-center justify-between rounded-2xl bg-amber-50/70 p-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-amber-600 shadow-sm">◷</span>
-                  <div>
-                    <p className="text-xs font-black text-slate-800">Terlambat</p>
-                    <p className="text-[10px] text-slate-400">Pukul 09:00 atau setelahnya</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-black text-amber-600">{myLateCount}</p>
-              </div>
-
-              <div className="flex items-center justify-between rounded-2xl bg-red-50/60 p-4">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-red-500 shadow-sm">!</span>
-                  <div>
-                    <p className="text-xs font-black text-slate-800">Alpa</p>
-                    <p className="text-[10px] text-slate-400">Termasuk absensi yang ditolak</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-black text-red-500">{myAbsentCount}</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sakit</p>
-                  <p className="mt-1 text-xl font-black text-orange-500">{mySickCount}</p>
-                </div>
-                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                  <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Izin</p>
-                  <p className="mt-1 text-xl font-black text-violet-600">{myLeaveCount}</p>
-                </div>
-              </div>
-            </div>
+            <Link
+              href="/my-attendance"
+              className="inline-flex h-10 w-fit items-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              Riwayat absensi lengkap
+            </Link>
           </div>
 
-          <div className="min-w-0 rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)] sm:p-7">
-            <div className="mb-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-600">Attendance analytics</p>
-                <h3 className="mt-1 text-lg font-black text-slate-900">Tren Waktu Kedatangan</h3>
-                <p className="mt-1 text-xs text-slate-400">Perubahan jam masuk dalam beberapa hari terakhir.</p>
-              </div>
-              <div className="w-fit rounded-full bg-blue-50 px-3 py-1.5 text-[10px] font-black text-blue-600">
-                {chartData.length} DATA
-              </div>
+          <div className={card}>
+            <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+              {myComposition.map(
+                (seg) =>
+                  seg.value > 0 && (
+                    <div
+                      key={seg.key}
+                      title={`${seg.label}: ${seg.value}`}
+                      style={{
+                        width: `${(seg.value / myCompositionTotal) * 100}%`,
+                        backgroundColor: STATUS[seg.key].color,
+                      }}
+                    />
+                  )
+              )}
             </div>
 
-            {chartData.length > 0 ? (
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart
-                    data={chartData}
-                    margin={{ top: 10, right: 8, left: -18, bottom: 5 }}
-                  >
-                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#eef2f7" />
-                    <XAxis
-                      dataKey="tanggal"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11, fill: "#94a3b8" }}
-                      dy={10}
-                    />
-                    <YAxis
-                      domain={["dataMin - 1", "dataMax + 1"]}
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fontSize: 11, fill: "#94a3b8" }}
-                      tickFormatter={(val) => `${Math.floor(val)}:00`}
-                    />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Line
-                      type="monotone"
-                      dataKey="jamDesimal"
-                      stroke="#2563eb"
-                      strokeWidth={3}
-                      dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#2563eb" }}
-                      activeDot={{ r: 7, stroke: "#fff", strokeWidth: 3, fill: "#2563eb" }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="flex h-72 flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 text-center">
-                <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl shadow-sm">📈</div>
-                <p className="text-sm font-black text-slate-700">Belum ada data grafik</p>
-                <p className="mt-1 max-w-xs text-xs leading-5 text-slate-400">
-                  Riwayat jam masuk akan muncul di sini setelah kamu melakukan absensi.
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* ===================================================
-            GRAFIK PRODUKTIVITAS HARIAN (JUMLAH TASK)
-        =================================================== */}
-        <section className="rounded-[30px] border border-slate-200/70 bg-white p-6 shadow-[0_16px_50px_-30px_rgba(15,23,42,0.3)] sm:p-7">
-          <div className="mb-5 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-600">Productivity analytics</p>
-              <h3 className="mt-1 text-lg font-black text-slate-900">Tren Produktivitas Harian</h3>
-              <p className="mt-1 text-xs text-slate-400">
-                Jumlah pekerjaan yang kamu laporkan setiap kali absen pulang.
-              </p>
-            </div>
-            <div className="w-fit rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-600">
-              {productivityData.length} DATA
-            </div>
-          </div>
-
-          {productivityData.length > 0 ? (
-            <div className="h-72 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart
-                  data={productivityData}
-                  margin={{ top: 10, right: 8, left: -18, bottom: 5 }}
+            <dl className="mt-6 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 lg:grid-cols-6 lg:gap-x-0 lg:divide-x lg:divide-slate-100">
+              <div className="lg:pr-5">
+                <dt className="flex items-center gap-2 text-sm text-slate-500">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-800" />
+                  Total masuk
+                </dt>
+                <dd
+                  className={`${D} mt-1 text-4xl font-semibold text-slate-900`}
                 >
-                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#eef2f7" />
-                  <XAxis
-                    dataKey="tanggal"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 11, fill: "#94a3b8" }}
-                    dy={10}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 11, fill: "#94a3b8" }}
-                  />
-                  <Tooltip content={<ProductivityTooltip />} />
-                  <Line
-                    type="monotone"
-                    dataKey="jumlahTugas"
-                    stroke="#16a34a"
-                    strokeWidth={3}
-                    dot={{ r: 4, strokeWidth: 2, fill: "#fff", stroke: "#16a34a" }}
-                    activeDot={{ r: 7, stroke: "#fff", strokeWidth: 3, fill: "#16a34a" }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <div className="flex h-72 flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 text-center">
-              <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-xl shadow-sm">📊</div>
-              <p className="text-sm font-black text-slate-700">Belum ada data produktivitas</p>
-              <p className="mt-1 max-w-xs text-xs leading-5 text-slate-400">
-                Grafik akan muncul setelah kamu melaporkan pekerjaan saat absen pulang.
-              </p>
-            </div>
-          )}
-        </section>
+                  {myTotalMasuk}
+                </dd>
+              </div>
 
-        <footer className="pb-2 pt-2 text-center">
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-300">
-            {companyName} • {userRole === "admin" ? "Admin & Employee Attendance System" : "Employee Attendance System"}
-          </p>
-        </footer>
+              {myComposition.map((item) => (
+                <div key={item.key} className="lg:px-5">
+                  <dt className="flex items-center gap-2 text-sm text-slate-500">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: STATUS[item.key].color }}
+                    />
+                    {item.label}
+                  </dt>
+                  <dd
+                    className={`${D} mt-1 text-4xl font-semibold text-slate-900`}
+                  >
+                    {item.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            <p className="mt-5 text-xs leading-relaxed text-slate-400">
+              Tepat waktu jika masuk sebelum pukul{" "}
+              {String(LATE_HOUR).padStart(2, "0")}:00. Alpa dihitung dari hari
+              kerja yang sudah lewat tanpa absensi, termasuk absensi yang
+              ditolak. Hari ini belum dihitung.
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            {/* JAM MASUK */}
+
+            <section className={`${card} min-w-0`}>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3
+                    className={`${D} text-xl font-semibold text-slate-900`}
+                  >
+                    Tren jam masuk
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Garis putus-putus menandai batas terlambat.
+                  </p>
+                </div>
+
+                <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  {chartData.length} data
+                </span>
+              </div>
+
+              {chartData.length > 0 ? (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={chartData}
+                      margin={{ top: 10, right: 8, left: -18, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="4 4"
+                        vertical={false}
+                        stroke="#EEF1F6"
+                      />
+                      <XAxis
+                        dataKey="tanggal"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12, fill: "#64748B" }}
+                        dy={8}
+                      />
+                      <YAxis
+                        domain={[
+                          (min: number) => Math.floor(min) - 1,
+                          (max: number) =>
+                            Math.max(Math.ceil(max) + 1, LATE_HOUR + 1),
+                        ]}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12, fill: "#94A3B8" }}
+                        tickFormatter={(val) => `${Math.floor(val)}:00`}
+                      />
+                      <Tooltip content={<ArrivalTooltip />} />
+                      <ReferenceLine
+                        y={LATE_HOUR}
+                        stroke={STATUS.late.color}
+                        strokeDasharray="5 5"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="jamDesimal"
+                        stroke="#0E1A3A"
+                        strokeWidth={2.5}
+                        dot={{
+                          r: 4,
+                          strokeWidth: 2,
+                          fill: "#fff",
+                          stroke: "#0E1A3A",
+                        }}
+                        activeDot={{
+                          r: 6,
+                          stroke: "#fff",
+                          strokeWidth: 2,
+                          fill: "#0E1A3A",
+                        }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500">
+                  Riwayat jam masuk akan muncul di sini setelah kamu absen.
+                </div>
+              )}
+            </section>
+
+            {/* PRODUKTIVITAS */}
+
+            <section className={`${card} min-w-0`}>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3
+                    className={`${D} text-xl font-semibold text-slate-900`}
+                  >
+                    Tren produktivitas
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Jumlah pekerjaan yang kamu laporkan saat absen pulang.
+                  </p>
+                </div>
+
+                <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  {productivityData.length} data
+                </span>
+              </div>
+
+              {productivityData.length > 0 ? (
+                <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={productivityData}
+                      margin={{ top: 10, right: 8, left: -18, bottom: 0 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="4 4"
+                        vertical={false}
+                        stroke="#EEF1F6"
+                      />
+                      <XAxis
+                        dataKey="tanggal"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12, fill: "#64748B" }}
+                        dy={8}
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 12, fill: "#94A3B8" }}
+                      />
+                      <Tooltip content={<ProductivityTooltip />} />
+                      <Line
+                        type="monotone"
+                        dataKey="jumlahTugas"
+                        stroke={STATUS.present.color}
+                        strokeWidth={2.5}
+                        dot={{
+                          r: 4,
+                          strokeWidth: 2,
+                          fill: "#fff",
+                          stroke: STATUS.present.color,
+                        }}
+                        activeDot={{
+                          r: 6,
+                          stroke: "#fff",
+                          strokeWidth: 2,
+                          fill: STATUS.present.color,
+                        }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="flex h-64 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 text-center text-sm text-slate-500">
+                  Grafik muncul setelah kamu melaporkan pekerjaan saat absen
+                  pulang.
+                </div>
+              )}
+            </section>
+          </div>
+        </section>
       </div>
     </main>
   );
