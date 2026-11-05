@@ -19,6 +19,7 @@ import {
 } from "recharts";
 
 import { supabase } from "@/lib/supabase";
+import * as XLSX from "xlsx";
 
 // =========================================================
 // FONT & TOKEN DESAIN (sama dengan halaman lainnya)
@@ -478,6 +479,7 @@ export default function MonthlyReportPage() {
 
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [userName, setUserName] = useState("");
   const [userRole, setUserRole] = useState("");
@@ -493,6 +495,7 @@ export default function MonthlyReportPage() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const [sortKey, setSortKey] = useState<SortKey>("absent");
+  const [selectedDivision, setSelectedDivision] = useState("__all__");
 
   // =========================================================
   // LOAD DATA
@@ -855,6 +858,23 @@ export default function MonthlyReportPage() {
     });
   }, [rows, sortKey]);
 
+  const divisionOptions = useMemo(() => {
+    const values = Array.from(
+      new Set(rows.map((row) => divisionLabel(row.division)))
+    );
+    return values.sort((a, b) => a.localeCompare(b, "id"));
+  }, [rows]);
+
+  const filteredRows = useMemo(
+    () =>
+      selectedDivision === "__all__"
+        ? sortedRows
+        : sortedRows.filter(
+            (row) => divisionLabel(row.division) === selectedDivision
+          ),
+    [sortedRows, selectedDivision]
+  );
+
   const divisionMeta = useMemo(() => {
     const map = new Map<
       string,
@@ -946,6 +966,236 @@ export default function MonthlyReportPage() {
 
   const atMin = monthInfo.year === minYear && monthInfo.month === 1;
   const atMax = monthInfo.year === maxYear && monthInfo.month === 12;
+
+  // =========================================================
+  // EXPORT EXCEL
+  // =========================================================
+
+  const handleExportExcel = async () => {
+    if (exporting) return;
+
+    setExporting(true);
+
+    try {
+      const workbook = XLSX.utils.book_new();
+      const generatedAt = new Date().toLocaleString("id-ID", {
+        timeZone: TIME_ZONE,
+        dateStyle: "long",
+        timeStyle: "short",
+      });
+
+      const employeeNameMap = new Map(
+        employees.map((employee) => [
+          employee.id,
+          employee.full_name || "Tanpa Nama",
+        ])
+      );
+
+      const statusLabel = (status: string) => {
+        if (status === "present") return "Tepat waktu";
+        if (status === "late") return "Terlambat";
+        if (status === "sakit") return "Sakit";
+        if (status === "izin") return "Izin";
+        if (status === "absent") return "Alpa";
+        return status || "Tidak diketahui";
+      };
+
+      const approvalLabel = (status: string | null) => {
+        if (status === "rejected") return "Ditolak";
+        if (status === "approved") return "Disetujui";
+        return status || "Belum ditinjau";
+      };
+
+      const formatDateTime = (value: string | null) => {
+        if (!value) return "-";
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "-";
+
+        return date.toLocaleString("id-ID", {
+          timeZone: TIME_ZONE,
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      };
+
+      const addSheet = (
+        sheetName: string,
+        data: Record<string, string | number | boolean>[],
+        widths: number[]
+      ) => {
+        const worksheet = XLSX.utils.json_to_sheet(data);
+        worksheet["!cols"] = widths.map((wch) => ({ wch }));
+        worksheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+        if (data.length > 0) {
+          worksheet["!autofilter"] = {
+            ref: XLSX.utils.encode_range({
+              s: { r: 0, c: 0 },
+              e: { r: data.length, c: Object.keys(data[0]).length - 1 },
+            }),
+          };
+        }
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      };
+
+      // Ringkasan mengikuti divisi yang sedang dipilih.
+      const exportActiveRows = filteredRows.filter(
+        (row) => !row.accountAfterMonth
+      );
+      const exportSum = (pick: (row: EmployeeSummary) => number) =>
+        exportActiveRows.reduce((total, row) => total + pick(row), 0);
+      const exportPresent = exportSum((row) => row.present);
+      const exportLate = exportSum((row) => row.late);
+      const exportSick = exportSum((row) => row.sick);
+      const exportLeave = exportSum((row) => row.leave);
+      const exportAbsent = exportSum((row) => row.absent);
+      const exportRejected = exportSum((row) => row.rejected);
+      const exportAccounted =
+        exportPresent + exportLate + exportSick + exportLeave + exportAbsent;
+      const exportDivisionLabel =
+        selectedDivision === "__all__" ? "Semua divisi" : selectedDivision;
+
+      // SHEET 1 — Rekap karyawan dibuat sebagai sheet pertama agar nama langsung terlihat.
+      const employeeData = filteredRows.map((employee, index) => ({
+        No: index + 1,
+        "Nama karyawan": employee.name,
+        Divisi: divisionLabel(employee.division),
+        "Tanggal bergabung": formatCreatedDate(employee.createdAt),
+        "Tepat waktu": employee.present,
+        Terlambat: employee.late,
+        Sakit: employee.sick,
+        Izin: employee.leave,
+        Alpa: employee.absent,
+        Ditolak: employee.rejected,
+        "Total masuk": employee.totalAttendances,
+        "Hari kerja dihitung": employee.activeDays,
+        Keterangan:
+          employee.monthNotStarted || employee.accountAfterMonth
+            ? noDataText(employee)
+            : employee.accountCreatedInMonth
+            ? "Karyawan baru pada periode ini"
+            : "Aktif",
+        "Alasan penolakan": employee.rejectionReasons.join(" | ") || "-",
+      }));
+      addSheet("Rekap Karyawan", employeeData, [
+        8, 28, 22, 20, 14, 14, 12, 12, 12, 12, 14, 20, 38, 50,
+      ]);
+
+      // SHEET 2 — Ringkasan sesuai divisi yang dipilih.
+      const summaryData = [ 
+        {
+          Perusahaan: companyName,
+          Periode: formattedMonth,
+          Divisi: exportDivisionLabel,
+          "Tanggal export": generatedAt,
+          "Jumlah karyawan": exportActiveRows.length,
+          "Total tepat waktu": exportPresent,
+          "Total terlambat": exportLate,
+          "Total sakit": exportSick,
+          "Total izin": exportLeave,
+          "Total alpa": exportAbsent,
+          "Total ditolak": exportRejected,
+          "Total masuk": exportPresent + exportLate,
+          "Tingkat kehadiran (%)": exportAccounted
+            ? Math.round(((exportPresent + exportLate) / exportAccounted) * 100)
+            : 0,
+          "Hari kerja": stats.workingDays,
+          "Hari libur": stats.holidays,
+          "Akhir pekan": stats.weekends,
+        },
+      ];
+      addSheet("Ringkasan", summaryData, [
+        24, 20, 20, 24, 18, 18, 16, 14, 14, 14, 14, 14, 22, 14, 14, 14,
+      ]);
+
+      // SHEET 3 — Rekap kehadiran per tanggal
+      const dailyData = daily.map((day) => ({
+        Tanggal: day.key,
+        "Hari / tanggal": day.full,
+        "Tepat waktu": day.present,
+        Terlambat: day.late,
+        Sakit: day.sick,
+        Izin: day.leave,
+        Alpa: day.absent,
+        "Total tercatat":
+          day.present + day.late + day.sick + day.leave + day.absent,
+      }));
+      addSheet("Kehadiran Harian", dailyData, [
+        16, 28, 16, 14, 12, 12, 12, 18,
+      ]);
+
+      // SHEET 4 — Detail setiap data absensi dari database
+      const selectedEmployeeIds = new Set(filteredRows.map((row) => row.id));
+      const detailData = [...attendances]
+        .filter((attendance) => selectedEmployeeIds.has(attendance.profile_id))
+        .sort((a, b) => {
+          const dateCompare = new Date(a.check_in || a.created_at).getTime()
+            - new Date(b.check_in || b.created_at).getTime();
+          return dateCompare;
+        })
+        .map((attendance, index) => ({
+          No: index + 1,
+          "Nama karyawan":
+            employeeNameMap.get(attendance.profile_id) || "Karyawan tidak ditemukan",
+          Tanggal: getDateKey(attendance.check_in || attendance.created_at),
+          "Waktu absensi": formatDateTime(
+            attendance.check_in || attendance.created_at
+          ),
+          Status: statusLabel(attendance.status),
+          Persetujuan: approvalLabel(attendance.approval_status),
+          "Alasan penolakan": attendance.rejection_reason || "-",
+          "ID absensi": attendance.id,
+        }));
+      addSheet("Detail Absensi", detailData, [
+        8, 28, 16, 24, 18, 20, 42, 38,
+      ]);
+
+      // Metadata tambahan pada setiap sheet
+      workbook.Props = {
+        Title: `Rekap Absensi ${formattedMonth}`,
+        Subject: `Laporan kehadiran ${companyName}`,
+        Author: companyName,
+        Company: companyName,
+        CreatedDate: new Date(),
+      };
+
+      const excelBuffer = XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+        compression: true,
+      });
+
+      const blob = new Blob([excelBuffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeCompanyName = companyName
+        .trim()
+        .replace(/[^\w\-]+/g, "-")
+        .replace(/-+/g, "-");
+
+      link.href = url;
+      const safeDivision = exportDivisionLabel
+        .trim()
+        .replace(/[^\\w\\-]+/g, "-")
+        .replace(/-+/g, "-");
+      link.download = `Rekap-Absensi-${safeCompanyName}-${safeDivision}-${selectedMonth}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Gagal export Excel:", error);
+      alert("Gagal mengexport data absensi. Silakan coba lagi.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -1171,6 +1421,32 @@ export default function MonthlyReportPage() {
                 Bulan ini
               </button>
             )}
+
+            <button
+              onClick={handleExportExcel}
+              disabled={exporting || fetching}
+              aria-label="Export data ke Excel"
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {exporting ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+                  <path d="M4 17v3h16v-3" />
+                </svg>
+              )}
+              <span>{exporting ? "Mengexport..." : "Export Excel"}</span>
+            </button>
 
             <button
               onClick={() => window.print()}
@@ -1445,6 +1721,26 @@ export default function MonthlyReportPage() {
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <label
+                  htmlFor="division-filter"
+                  className="text-sm font-semibold text-slate-600"
+                >
+                  Divisi
+                </label>
+                <select
+                  id="division-filter"
+                  value={selectedDivision}
+                  onChange={(event) => setSelectedDivision(event.target.value)}
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-[#0E1A3A]"
+                >
+                  <option value="__all__">Semua divisi</option>
+                  {divisionOptions.map((division) => (
+                    <option key={division} value={division}>
+                      {division}
+                    </option>
+                  ))}
+                </select>
+
                 <span className="text-sm font-semibold text-slate-600">
                   Urutkan
                 </span>
@@ -1476,7 +1772,7 @@ export default function MonthlyReportPage() {
               </div>
             </div>
 
-            {sortedRows.length === 0 ? (
+            {filteredRows.length === 0 ? (
               <div
                 className={`${card} flex min-h-[260px] items-center justify-center border-dashed p-8 text-center`}
               >
@@ -1494,12 +1790,12 @@ export default function MonthlyReportPage() {
                 {/* KARTU: HP & tablet */}
 
                 <div className="rekap-cards grid gap-3 sm:grid-cols-2 lg:hidden">
-                  {sortedRows.map((employee, index) => {
+                  {filteredRows.map((employee, index) => {
                     const label = divisionLabel(employee.division);
                     const showGroup =
                       groupByDivision &&
                       (index === 0 ||
-                        divisionLabel(sortedRows[index - 1].division) !== label);
+                        divisionLabel(filteredRows[index - 1].division) !== label);
                     const meta = divisionMeta.get(label);
 
                     return (
@@ -1567,12 +1863,12 @@ export default function MonthlyReportPage() {
                     </thead>
 
                     <tbody className="divide-y divide-slate-100">
-                      {sortedRows.map((employee, index) => {
+                      {filteredRows.map((employee, index) => {
                         const label = divisionLabel(employee.division);
                         const showGroup =
                           groupByDivision &&
                           (index === 0 ||
-                            divisionLabel(sortedRows[index - 1].division) !==
+                            divisionLabel(filteredRows[index - 1].division) !==
                               label);
                         const meta = divisionMeta.get(label);
                         const noData =

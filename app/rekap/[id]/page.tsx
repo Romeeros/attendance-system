@@ -20,6 +20,7 @@ import {
 } from "recharts";
 
 import { supabase } from "@/lib/supabase";
+import * as XLSX from "xlsx";
 
 // =========================================================
 // FONT & TOKEN DESAIN (sama dengan Rekap bulanan & Log absensi)
@@ -979,6 +980,7 @@ export default function EmployeeDetailPage() {
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [userName, setUserName] = useState("");
   const [userRole, setUserRole] = useState("");
@@ -1350,6 +1352,139 @@ export default function EmployeeDetailPage() {
       trend,
     };
   }, [employee, attendances, holidays, monthInfo]);
+
+  // =========================================================
+  // EXPORT REKAP DETAIL KARYAWAN KE EXCEL
+  // =========================================================
+
+  const handleExportExcel = () => {
+    if (!employee || !report || fetching || exporting) return;
+
+    setExporting(true);
+
+    try {
+      const workbook = XLSX.utils.book_new();
+
+      const addSheet = (
+        sheetName: string,
+        rows: Record<string, string | number>[],
+        widths: number[]
+      ) => {
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        worksheet["!cols"] = widths.map((wch) => ({ wch }));
+        worksheet["!autofilter"] = {
+          ref: worksheet["!ref"] || "A1",
+        };
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      };
+
+      const summaryRows = [
+        { Keterangan: "Nama karyawan", Nilai: employee.full_name || "-" },
+        { Keterangan: "Divisi", Nilai: employee.division?.trim() || "-" },
+        { Keterangan: "Perusahaan", Nilai: companyName },
+        { Keterangan: "Periode", Nilai: formattedMonth },
+        { Keterangan: "Tanggal bergabung", Nilai: formatCreatedDate(employee.created_at) },
+        { Keterangan: "Tepat waktu", Nilai: report.totals.present },
+        { Keterangan: "Terlambat", Nilai: report.totals.late },
+        { Keterangan: "Sakit", Nilai: report.totals.sick },
+        { Keterangan: "Izin", Nilai: report.totals.leave },
+        { Keterangan: "Alpa", Nilai: report.totals.absent },
+        { Keterangan: "Absensi ditolak", Nilai: report.rejected },
+        { Keterangan: "Total masuk", Nilai: report.masuk },
+        { Keterangan: "Hari kerja dihitung", Nilai: report.activeDays },
+        { Keterangan: "Tingkat kehadiran (%)", Nilai: report.rate },
+        { Keterangan: "Hari libur", Nilai: report.holidayCount },
+        { Keterangan: "Akhir pekan", Nilai: report.weekendCount },
+      ];
+      addSheet("Ringkasan", summaryRows, [30, 38]);
+
+      const dailyRows = report.dayRows.map((row) => ({
+        Tanggal: row.key,
+        "Hari / tanggal": row.full,
+        Status: row.bucket ? META[row.bucket].label : row.awaiting ? "Belum absen" : "-",
+        Persetujuan: row.primary
+          ? APPROVAL[normalizeApproval(row.primary.approval_status)].label
+          : "-",
+        "Jam masuk": row.primary ? formatTime(row.primary.check_in) : "-",
+        "Jam pulang": row.primary ? formatTime(row.primary.check_out) : "-",
+        "Jumlah pekerjaan": row.tasks.length,
+        "Daftar pekerjaan": row.tasks.join(" | ") || "-",
+        Keterangan: row.primary?.reason?.trim() || row.note || "-",
+        "Jumlah absensi ditolak": row.rejected.length,
+        "Alasan penolakan": row.rejected
+          .map((item) => item.rejection_reason?.trim() || "Tidak ada alasan")
+          .join(" | ") || "-",
+      }));
+      addSheet("Kehadiran Harian", dailyRows, [
+        16, 30, 18, 18, 14, 14, 18, 60, 40, 22, 50,
+      ]);
+
+      const attendanceRows = [...attendances]
+        .sort((a, b) => {
+          const dateA = new Date(a.check_in || a.created_at).getTime();
+          const dateB = new Date(b.check_in || b.created_at).getTime();
+          return dateA - dateB;
+        })
+        .map((item, index) => ({
+          No: index + 1,
+          Tanggal: getDateKey(item.check_in || item.created_at),
+          "Waktu dibuat": formatTime(item.created_at),
+          "Jam masuk": formatTime(item.check_in),
+          "Jam pulang": formatTime(item.check_out),
+          Status: META[bucketOf(item.status)].label,
+          Persetujuan:
+            item.approval_status === "rejected"
+              ? "Ditolak"
+              : APPROVAL[normalizeApproval(item.approval_status)].label,
+          Keterangan: item.reason?.trim() || "-",
+          "Alasan penolakan": item.rejection_reason?.trim() || "-",
+          "Daftar pekerjaan": taskListOf(item).join(" | ") || "-",
+          "Latitude masuk": item.latitude ?? "-",
+          "Longitude masuk": item.longitude ?? "-",
+          "Latitude pulang": item.latitude_out ?? "-",
+          "Longitude pulang": item.longitude_out ?? "-",
+          "ID absensi": item.id,
+        }));
+      addSheet("Detail Data Absensi", attendanceRows, [
+        8, 16, 20, 14, 14, 18, 18, 40, 45, 60, 18, 18, 18, 18, 38,
+      ]);
+
+      workbook.Props = {
+        Title: `Rekap Absensi ${employee.full_name} - ${formattedMonth}`,
+        Subject: `Laporan kehadiran karyawan ${employee.full_name}`,
+        Author: companyName,
+        CreatedDate: new Date(),
+      };
+
+      const buffer = XLSX.write(workbook, {
+        bookType: "xlsx",
+        type: "array",
+        compression: true,
+      });
+
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const safeName = (employee.full_name || "karyawan")
+        .trim()
+        .replace(/[^a-zA-Z0-9-_]+/g, "-")
+        .replace(/-+/g, "-");
+
+      link.href = url;
+      link.download = `Rekap-Absensi-${safeName}-${selectedMonth}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      console.error("Gagal export Excel:", error);
+      alert("Gagal mengexport data absensi. Silakan coba lagi.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // =========================================================
   // NAVIGASI BULAN
@@ -1747,6 +1882,31 @@ export default function EmployeeDetailPage() {
                 Bulan ini
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={fetching || exporting || !dataLoaded}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exporting ? (
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              ) : (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3" />
+                </svg>
+              )}
+              <span>{exporting ? "Mengekspor..." : "Export Excel"}</span>
+            </button>
 
             <button
               onClick={() => window.print()}
