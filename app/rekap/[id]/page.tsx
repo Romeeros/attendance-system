@@ -2266,7 +2266,7 @@ export default function EmployeeDetailPage() {
         </div>
       </div>
 
-      {/* ================= MODAL DETAIL HARIAN ================= */}
+      {/* ================ MODAL DETAIL HARIAN ================ */}
 
       {selectedRow && (
         <DetailModal
