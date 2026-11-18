@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import ManagementHeader from "@/components/shared/ManagementHeader";
 import { Bricolage_Grotesque, Figtree } from "next/font/google";
 
 import {
@@ -683,46 +684,12 @@ export default function OwnerDashboardPage() {
         </div>
       )}
 
-      {/* ================= HEADER ================= */}
-
-      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3.5 sm:px-8">
-          <div className="flex items-center gap-3">
-            <div
-              className={`${D} flex h-10 w-10 items-center justify-center rounded-xl bg-[#0E1A3A] text-lg font-bold text-white`}
-            >
-              {companyName.charAt(0).toUpperCase()}
-            </div>
-
-            <div>
-              <h1
-                className={`${D} text-lg font-semibold leading-tight text-slate-900`}
-              >
-                {companyName}
-              </h1>
-              <p className="text-xs text-slate-500">Dasbor owner</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-2.5 sm:flex">
-              <span className="text-sm font-semibold capitalize text-slate-700">
-                {userName}
-              </span>
-              <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
-                Owner
-              </span>
-            </div>
-
-            <button
-              onClick={handleLogout}
-              className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
+      {/* ================= HEADER BERSAMA MANAGEMENT ================= */}
+      <ManagementHeader
+        subtitle={companyName}
+        userName={userName}
+        role="Owner"
+      />
 
       <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-8 sm:pt-8">
         {/* ================= HERO ================= */}

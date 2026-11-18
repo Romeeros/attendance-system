@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bricolage_Grotesque, Figtree } from "next/font/google";
 import { supabase } from "@/lib/supabase";
+import ManagementHeader from "@/components/shared/ManagementHeader";
 
 // =========================================================
 // FONT & TOKEN DESAIN (sama dengan halaman lainnya)
@@ -852,11 +852,6 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
-  };
-
   // =========================================================
   // LOADING
   // =========================================================
@@ -911,61 +906,14 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ================= HEADER ================= */}
-
-      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <div
-              className={`${D} flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0E1A3A] text-lg font-bold text-white`}
-            >
-              {companyName.charAt(0).toUpperCase()}
-            </div>
-
-            <div className="min-w-0">
-              <h1
-                className={`${D} truncate text-lg font-semibold leading-tight text-slate-900`}
-              >
-                {companyName}
-              </h1>
-              <p className="text-xs text-slate-500">Direktori karyawan</p>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            <div className="hidden items-center gap-2.5 md:flex">
-              <span className="max-w-[10rem] truncate text-sm font-semibold capitalize text-slate-700">
-                {userName}
-              </span>
-
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${
-                  currentRole === "owner"
-                    ? "bg-violet-50 text-violet-700 ring-violet-200"
-                    : "bg-sky-50 text-sky-700 ring-sky-200"
-                }`}
-              >
-                {roleLabel}
-              </span>
-            </div>
-
-            <Link
-              href={dashboardPath(currentRole)}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
-            >
-              <Icon d={ICONS.back} />
-              <span className="hidden sm:inline">Dasbor</span>
-            </Link>
-
-            <button
-              onClick={handleLogout}
-              className="h-10 rounded-xl border border-slate-200 px-3.5 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
+      {/* ================= SHARED MANAGEMENT HEADER ================= */}
+      <ManagementHeader
+        subtitle="Direktori karyawan"
+        userName={userName}
+        role={currentRole === "admin" ? "Admin" : "Owner"}
+        backHref={dashboardPath(currentRole)}
+        backLabel="Dasbor"
+      />
 
       <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-8 sm:pt-8">
         {/* ================= JUDUL ================= */}

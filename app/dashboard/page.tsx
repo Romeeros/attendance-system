@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import EmployeeHeader from "@/components/employees/EmployeeHeader";
 import { Bricolage_Grotesque, Figtree } from "next/font/google";
 
 import {
@@ -20,16 +21,6 @@ import {
 } from "recharts";
 
 import { supabase } from "@/lib/supabase";
-
-// =========================================================
-// LOGO
-// Taruh gambar di folder public/logo lalu sesuaikan nama
-// file & ekstensinya di sini. Contoh: public/logo/logo.png
-// Kalau file tidak ditemukan, otomatis tampil huruf pertama
-// nama perusahaan.
-// =========================================================
-
-const LOGO_SRC = "/logo/logo.png";
 
 // Absen masuk pada jam ini atau setelahnya dihitung terlambat
 const LATE_HOUR = 9;
@@ -142,32 +133,6 @@ function Icon({
   );
 }
 
-function BrandLogo({ name }: { name: string }) {
-  const [failed, setFailed] = useState(false);
-
-  if (failed) {
-    return (
-      <div
-        className={`${D} flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#0E1A3A] text-lg font-bold text-white`}
-      >
-        {name.charAt(0).toUpperCase()}
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={LOGO_SRC}
-        alt={`Logo ${name}`}
-        onError={() => setFailed(true)}
-        className="h-full w-full object-contain p-1"
-      />
-    </div>
-  );
-}
-
 function ArrivalTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
 
@@ -206,7 +171,6 @@ export default function DashboardPage() {
   // ---------- umum
   const [loading, setLoading] = useState(true);
   const [userName, setUserName] = useState("");
-  const [companyName, setCompanyName] = useState("Company Attendance");
   const [userId, setUserId] = useState("");
   const [profileCreatedAt, setProfileCreatedAt] = useState<string | null>(null);
 
@@ -463,11 +427,6 @@ export default function DashboardPage() {
       // Batas awal perhitungan alpa
       setProfileCreatedAt(profile.created_at ?? null);
 
-      const company: any = (profile as any).companies;
-      const cName = Array.isArray(company) ? company[0]?.name : company?.name;
-
-      if (cName) setCompanyName(cName);
-
       // ---- batas hari ini (waktu lokal perangkat)
       const today = new Date();
       const todayStr = toDateKey(today);
@@ -586,14 +545,6 @@ export default function DashboardPage() {
   // =========================================================
   // AKSI
   // =========================================================
-
-  const handleLogout = async () => {
-    stopCamera();
-
-    await supabase.auth.signOut();
-
-    router.push("/login");
-  };
 
   // ---- laporan pekerjaan
   const handleTaskChange = (index: number, value: string) => {
@@ -1037,43 +988,8 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ================= HEADER ================= */}
-
-      <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <BrandLogo name={companyName} />
-
-            <div className="min-w-0">
-              <h1
-                className={`${D} truncate text-lg font-semibold leading-tight text-slate-900`}
-              >
-                {companyName}
-              </h1>
-              <p className="text-xs text-slate-500">Dasbor karyawan</p>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-3">
-            <div className="hidden items-center gap-2.5 sm:flex">
-              <span className="max-w-[10rem] truncate text-sm font-semibold capitalize text-slate-700">
-                {userName}
-              </span>
-
-              <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-xs font-semibold text-sky-700 ring-1 ring-inset ring-sky-200">
-                Employee
-              </span>
-            </div>
-
-            <button
-              onClick={handleLogout}
-              className="h-10 rounded-xl border border-slate-200 px-4 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
+      {/* HEADER EMPLOYEE - komponen bersama untuk seluruh halaman Employee */}
+      <EmployeeHeader subtitle="Dashboard" userName={userName} />
 
       <div className="mx-auto max-w-7xl px-4 pt-6 sm:px-8 sm:pt-8">
         {/* ================= HERO ================= */}

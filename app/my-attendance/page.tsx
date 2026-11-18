@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Bricolage_Grotesque, Figtree } from "next/font/google";
 import { supabase } from "@/lib/supabase";
+import EmployeeHeader from "@/components/employees/EmployeeHeader";
+
+const fontDisplay = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-display" });
+const fontBody = Figtree({ subsets: ["latin"], variable: "--font-body" });
+const FONT_VARS = `${fontDisplay.variable} ${fontBody.variable}`;
+const D = "font-[family-name:var(--font-display)]";
+const BASE = `${FONT_VARS} font-[family-name:var(--font-body)]`;
 
 interface Profile {
   id: string;
@@ -454,23 +461,10 @@ export default function MyAttendancePage() {
 
   if (loading) {
     return (
-      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#f5f8fc]">
-        <div className="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-blue-100/50 blur-3xl" />
-
-        <div className="absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-emerald-100/50 blur-3xl" />
-
-        <div className="relative flex flex-col items-center">
-          <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-[28px] border border-gray-100 bg-white shadow-xl shadow-blue-100/60">
-            <img
-              src="/hero.png"
-              alt="SVARA Innovation"
-              className="h-14 w-auto object-contain"
-            />
-          </div>
-
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-100 border-t-blue-600" />
-
-          <p className="mt-4 text-sm font-semibold text-gray-500">
+      <main className={`${BASE} flex min-h-screen items-center justify-center bg-[#F2F4F9]`}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-9 w-9 animate-spin rounded-full border-[3px] border-slate-200 border-t-[#0E1A3A]" />
+          <p className="text-sm font-medium text-slate-500">
             Memuat riwayat absensi...
           </p>
         </div>
@@ -483,96 +477,29 @@ export default function MyAttendancePage() {
   // ============================================================
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f5f8fc]">
+    <main className={`${BASE} min-h-screen overflow-x-hidden bg-[#F2F4F9] text-slate-800`}>
       {/* ====================================================== */}
       {/* BACKGROUND */}
       {/* ====================================================== */}
 
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-[500px] w-[500px] rounded-full bg-blue-100/40 blur-3xl" />
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" />
 
-        <div className="absolute right-[-180px] top-[30%] h-[450px] w-[450px] rounded-full bg-emerald-100/30 blur-3xl" />
-
-        <div className="absolute bottom-[-200px] left-[20%] h-[400px] w-[400px] rounded-full bg-purple-100/20 blur-3xl" />
-      </div>
-
-      {/* ====================================================== */}
-      {/* HEADER */}
-      {/* ====================================================== */}
-
-      <header className="sticky top-0 z-50 border-b border-gray-100/80 bg-white/85 shadow-sm backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-gray-100 bg-white shadow-sm">
-              <img
-                src="/svara.png"
-                alt="SVARA"
-                className="h-8 w-auto object-contain"
-              />
-            </div>
-
-            <div className="hidden sm:block">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600">
-                SVARA INNOVATION
-              </p>
-
-              <p className="text-sm font-extrabold text-gray-900">
-                Employee Attendance
-              </p>
-            </div>
-          </div>
-
-          {/* User */}
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                Employee
-              </p>
-
-              <p className="max-w-[180px] truncate text-sm font-extrabold text-gray-800">
-                {profile?.full_name || "Employee"}
-              </p>
-            </div>
-
-            <Link
-              href="/dashboard"
-              className="group flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-bold text-gray-600 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-600 sm:px-4"
-            >
-              <svg
-                className="h-4 w-4 transition-transform group-hover:-translate-x-1"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M15 19l-7-7 7-7"
-                />
-              </svg>
-
-              <span className="hidden sm:inline">
-                Dashboard
-              </span>
-
-              <span className="sm:hidden">Kembali</span>
-            </Link>
-          </div>
-        </div>
-      </header>
+      {/* HEADER BERSAMA EMPLOYEE */}
+      <EmployeeHeader
+        subtitle="Riwayat absensi"
+        userName={profile?.full_name || "Employee"}
+      />
 
       {/* ====================================================== */}
       {/* CONTENT */}
       {/* ====================================================== */}
 
-      <div className="relative mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 sm:pt-8 lg:px-8">
+      <div className="relative mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-8 sm:pt-8">
         {/* ==================================================== */}
         {/* HERO */}
         {/* ==================================================== */}
 
-        <section className="relative mb-6 overflow-hidden rounded-[30px] bg-gradient-to-br from-[#075bd4] via-[#1475df] to-[#079b83] p-6 text-white shadow-2xl shadow-blue-200/50 sm:p-8 lg:p-10">
+        <section className="relative mb-6 overflow-hidden rounded-[28px] bg-[#0E1A3A] p-6 text-white shadow-lg shadow-slate-900/10 sm:p-8 lg:p-10">
           {/* Decoration */}
           <div className="absolute -right-24 -top-28 h-72 w-72 rounded-full border-[35px] border-white/5" />
 
@@ -590,7 +517,7 @@ export default function MyAttendancePage() {
                 </span>
               </div>
 
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+              <h1 className={`${D} text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl`}>
                 Riwayat
                 <br className="sm:hidden" /> Absensiku
               </h1>
@@ -686,7 +613,7 @@ export default function MyAttendancePage() {
         {/* ==================================================== */}
 
         {monthState === "before-account" && (
-          <section className="mb-6 overflow-hidden rounded-3xl border border-amber-100 bg-white shadow-lg shadow-gray-100/50">
+          <section className="mb-6 overflow-hidden rounded-2xl border border-amber-100 bg-white shadow-sm">
             <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
                 <svg
@@ -725,9 +652,9 @@ export default function MyAttendancePage() {
         )}
 
         {monthState === "future" && (
-          <section className="mb-6 overflow-hidden rounded-3xl border border-blue-100 bg-white shadow-lg shadow-gray-100/50">
+          <section className="mb-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg shadow-gray-100/50">
             <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-[#0E1A3A]">
                 <svg
                   className="h-6 w-6"
                   fill="none"
@@ -768,8 +695,8 @@ export default function MyAttendancePage() {
         {/* STATISTICS */}
         {/* ==================================================== */}
 
-        <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3">
-          <p className="text-xs font-medium leading-5 text-blue-700">
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-medium leading-5 text-slate-700">
             <span className="font-black">Catatan:</span> absensi
             <span className="font-black"> Terlambat </span>
             tetap dihitung sebagai <span className="font-black">Hadir</span>.
@@ -849,13 +776,13 @@ export default function MyAttendancePage() {
         {/* HISTORY */}
         {/* ==================================================== */}
 
-        <section className="overflow-hidden rounded-[28px] border border-gray-100 bg-white shadow-xl shadow-gray-200/40">
+        <section className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-sm">
           {/* Header */}
           <div className="border-b border-gray-100 p-5 sm:p-6">
             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-[#0E1A3A]">
                     <svg
                       className="h-5 w-5"
                       fill="none"
@@ -879,7 +806,7 @@ export default function MyAttendancePage() {
                   </div>
 
                   <div>
-                    <h2 className="text-xl font-black text-gray-900">
+                    <h2 className={`${D} text-xl font-semibold text-slate-900`}>
                       {selectedMonthInfo?.label ||
                         "Riwayat Absensi"}
                     </h2>
@@ -915,7 +842,7 @@ export default function MyAttendancePage() {
                     setSearch(e.target.value)
                   }
                   placeholder="Cari absensi..."
-                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pl-10 pr-4 text-sm font-medium text-gray-700 outline-none transition-all placeholder:text-gray-400 focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 py-3 pl-10 pr-4 text-sm font-medium text-gray-700 outline-none transition-all placeholder:text-gray-400 focus:border-[#0E1A3A] focus:bg-white focus:ring-4 focus:ring-slate-100"
                 />
               </div>
             </div>
@@ -1034,12 +961,12 @@ export default function MyAttendancePage() {
                       return (
                         <tr
                           key={item.id}
-                          className="group transition-colors hover:bg-blue-50/30"
+                          className="group transition-colors hover:bg-slate-50"
                         >
                           {/* Date */}
                           <td className="px-6 py-5">
                             <div className="flex items-center gap-3">
-                              <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                              <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-slate-100 text-[#0E1A3A]">
                                 <span className="text-[8px] font-black uppercase">
                                   {date.toLocaleDateString(
                                     "id-ID",
@@ -1085,7 +1012,7 @@ export default function MyAttendancePage() {
                               </span>
                             ) : (
                               <div className="flex items-center gap-2">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-[#0E1A3A]">
                                   <svg
                                     className="h-4 w-4"
                                     fill="none"
@@ -1106,7 +1033,7 @@ export default function MyAttendancePage() {
                                   </svg>
                                 </div>
 
-                                <span className="text-sm font-black text-blue-600">
+                                <span className="text-sm font-black text-[#0E1A3A]">
                                   {formatTime(
                                     item.check_in
                                   )}
@@ -1276,12 +1203,12 @@ export default function MyAttendancePage() {
                   return (
                     <div
                       key={item.id}
-                      className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-all hover:shadow-md"
+                      className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
                     >
                       {/* Card top */}
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                          <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl bg-slate-100 text-[#0E1A3A]">
                             <span className="text-[9px] font-black uppercase">
                               {date.toLocaleDateString(
                                 "id-ID",
@@ -1327,19 +1254,20 @@ export default function MyAttendancePage() {
                           />
 
                           {getStatusLabel(
-                            item.status
+                            item.status,
+                            item.approval_status
                           )}
                         </span>
                       </div>
 
                       {/* Times */}
                       <div className="mt-4 grid grid-cols-2 gap-3">
-                        <div className="rounded-xl bg-blue-50/70 p-3">
-                          <p className="text-[9px] font-bold uppercase tracking-wider text-blue-400">
+                        <div className="rounded-xl bg-slate-50 p-3">
+                          <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                             Jam Masuk
                           </p>
 
-                          <p className="mt-1 text-lg font-black text-blue-600">
+                          <p className="mt-1 text-lg font-black text-[#0E1A3A]">
                             {isSpecial
                               ? "--:--"
                               : formatTime(
@@ -1534,7 +1462,7 @@ export default function MyAttendancePage() {
           >
             <div className="relative max-h-[88vh] w-full max-w-2xl overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl">
               {/* Header */}
-              <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-600 px-5 py-5 text-white sm:px-7 sm:py-6">
+              <div className="relative overflow-hidden bg-[#0E1A3A] px-5 py-5 text-white sm:px-7 sm:py-6">
                 <div className="absolute -right-16 -top-20 h-44 w-44 rounded-full border-[28px] border-white/10" />
                 <div className="absolute -bottom-24 left-1/2 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
 
@@ -1549,7 +1477,7 @@ export default function MyAttendancePage() {
 
                     <h2
                       id="task-report-title"
-                      className="text-2xl font-black tracking-tight sm:text-3xl"
+                      className={`${D} text-2xl font-semibold tracking-tight sm:text-3xl`}
                     >
                       Pekerjaan Hari Ini
                     </h2>
@@ -1573,11 +1501,11 @@ export default function MyAttendancePage() {
               {/* Content */}
               <div className="max-h-[calc(88vh-150px)] overflow-y-auto p-5 sm:p-7">
                 <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  <div className="rounded-2xl border border-blue-100 bg-blue-50/70 p-3">
-                    <p className="text-[9px] font-black uppercase tracking-wider text-blue-400">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[9px] font-black uppercase tracking-wider text-slate-400">
                       Jam Masuk
                     </p>
-                    <p className="mt-1 text-lg font-black text-blue-600">
+                    <p className="mt-1 text-lg font-black text-[#0E1A3A]">
                       {formatTime(selectedTaskAttendance.check_in)}
                     </p>
                   </div>
@@ -1925,7 +1853,7 @@ function EmptyAttendance({
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center sm:py-20">
       <div className="relative mb-6 flex h-24 w-24 items-center justify-center rounded-[28px] bg-gray-50">
-        <div className="absolute inset-0 rounded-[28px] bg-blue-50 blur-xl" />
+        <div className="absolute inset-0 rounded-[28px] bg-slate-100 blur-xl" />
 
         <svg
           className="relative h-10 w-10 text-gray-300"
@@ -1948,7 +1876,7 @@ function EmptyAttendance({
         </svg>
       </div>
 
-      <h3 className="text-lg font-black text-gray-800">
+      <h3 className={`${D} text-lg font-semibold text-slate-800`}>
         {title}
       </h3>
 
