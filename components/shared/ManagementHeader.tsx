@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -23,23 +24,30 @@ export default function ManagementHeader({
   const pathname = usePathname();
 
   const isOwner = role === "Owner";
-  const dashboardHref = isOwner ? "/owner/dashboard" : "/admin/dashboard";
 
-  // Urutan navigasi:
-  // /rekap/[id] -> /rekap -> Dashboard
-  // Halaman lain selain Dashboard -> Dashboard secara default.
+  const dashboardHref = isOwner
+    ? "/owner/dashboard"
+    : "/admin/dashboard";
+
+  // Deteksi halaman dashboard berdasarkan URL.
+  const isDashboardPage =
+    pathname === "/owner/dashboard" ||
+    pathname === "/admin/dashboard";
+
+  // Deteksi halaman detail rekap.
   const isRekapDetail =
-    pathname === "/rekap/[id]" ||
-    (pathname.startsWith("/rekap/") && pathname !== "/rekap/");
+    pathname.startsWith("/rekap/") &&
+    pathname !== "/rekap/";
 
-  const resolvedBackHref =
-    backHref !== undefined
+  // Tentukan tujuan tombol kembali.
+  // Tombol kembali tidak ditampilkan pada halaman dashboard.
+  const resolvedBackHref = isDashboardPage
+    ? undefined
+    : backHref !== undefined
       ? backHref
       : isRekapDetail
         ? "/rekap"
-        : subtitle.trim().toLowerCase() === "dashboard"
-          ? undefined
-          : dashboardHref;
+        : dashboardHref;
 
   const resolvedBackLabel =
     backLabel ?? (isRekapDetail ? "Rekap" : "Dasbor");
@@ -52,6 +60,7 @@ export default function ManagementHeader({
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200/70 bg-white/85 backdrop-blur print:hidden">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3.5 sm:px-8">
+
         {/* Logo dan nama perusahaan */}
         <div className="flex min-w-0 items-center gap-3">
           <img
@@ -64,12 +73,16 @@ export default function ManagementHeader({
             <h1 className="truncate text-lg font-semibold leading-tight text-slate-900">
               SVARA INNOVATION
             </h1>
-            <p className="text-xs text-slate-500">{subtitle}</p>
+
+            <p className="text-xs text-slate-500">
+              {subtitle}
+            </p>
           </div>
         </div>
 
         {/* Navigasi dan akun */}
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+
           {/* Informasi pengguna */}
           <div className="hidden items-center gap-2.5 sm:flex">
             <span className="max-w-40 truncate text-sm font-semibold capitalize text-slate-700">
@@ -87,7 +100,6 @@ export default function ManagementHeader({
             </span>
           </div>
 
-          {/* Tombol kembali: detail rekap -> daftar rekap -> dashboard */}
           {resolvedBackHref && (
             <Link
               href={resolvedBackHref}
@@ -98,7 +110,6 @@ export default function ManagementHeader({
             </Link>
           )}
 
-          {/* Tombol logout */}
           <button
             type="button"
             onClick={handleLogout}
